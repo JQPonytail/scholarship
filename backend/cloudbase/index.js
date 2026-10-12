@@ -12,7 +12,9 @@
 //  所有接口共用同一个云函数，通过 event.path 区分
 // ============================================================
 
-const cloudbase = require('@cloudbase/node-sdk');
+// 注意：不 require 任何外部 SDK。
+// CloudBase 云函数运行时自带全局 cloudbase 对象（Node 8+ 内置），
+// 直接用即可。require('@cloudbase/node-sdk') 在 Node20 环境会报模块找不到。
 
 // ---------- 配置 ----------
 const ADMIN_PASSWORD = 'JQP@2026';
@@ -21,10 +23,15 @@ const COLL = 'codes';              // 集合名
 const MAX_CODES = 500;             // 最多保留多少条历史码
 
 // ---------- CloudBase 初始化 ----------
-let app, db;
-function init() {
+let db;
+function getDb() {
   if (db) return db;
-  app = cloudbase.init({ env: cloudbase.SYMBOL_CURRENT_ENV });
+  const g = globalThis;
+  const api = g.cloudbase || (g.tcb && g.tcb.cloudbase);
+  if (!api || typeof api.init !== 'function') {
+    throw new Error('CloudBase 运行时未就绪：找不到全局 cloudbase 对象');
+  }
+  const app = api.init({ env: api.SYMBOL_CURRENT_ENV });
   db = app.database();
   return db;
 }
@@ -94,7 +101,7 @@ function genCode(taken) {
 
 // ---------- 读所有码（保留最新 500 条）----------
 async function readAll() {
-  const d = init();
+  const d = getDb();
   const res = await d.collection(COLL).limit(MAX_CODES).orderBy('createdAt', 'desc').get();
   const list = (res && res.data) || [];
   return Array.isArray(list) ? list : [];
@@ -115,7 +122,7 @@ async function handleVerify(event) {
   if (hit.expires && hit.expires < t) return fail('该访问码已过期，请索取新的');
 
   // 立即标记已用：保证一个码只能成功一次（跨设备也不可复用）
-  const upd = await init().collection(COLL).doc(hit._id).update({
+  const upd = await getDb().collection(COLL).doc(hit._id).update({
     used: true,
     usedAt: t
   });
@@ -148,7 +155,7 @@ async function handleCreate(event) {
   // 先顺手清理：未用且已过期
   for (const x of list) {
     if (!x.used && x.expires && x.expires < t) {
-      try { await init().collection(COLL).doc(x._id).remove(); } catch (e) {}
+      try { await getDb().collection(COLL).doc(x._id).remove(); } catch (e) {}
     }
   }
 
@@ -162,7 +169,7 @@ async function handleCreate(event) {
     used: false,
     createdAt: t
   };
-  await init().collection(COLL).add(row);
+  await getDb().collection(COLL).add(row);
 
   return ok({
     ok: true,
@@ -204,7 +211,7 @@ async function handleRevoke(event) {
   const hit = list.find(x => String(x.code) === code);
   if (!hit) return fail('访问码不存在');
 
-  await init().collection(COLL).doc(hit._id).update({ used: true, usedAt: now() });
+  await getDb().collection(COLL).doc(hit._id).update({ used: true, usedAt: now() });
   return ok({ ok: true, code: code });
 }
 
