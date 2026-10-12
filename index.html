@@ -948,14 +948,18 @@ function adoptSets(o){
 function saveSets(){
   if(isGuest()) return;
   try{ localStorage.setItem(K_SETS, JSON.stringify(state.sets)); }catch(e){}
-}
+
+  if(typeof cbMarkDirty==='function') cbMarkDirty();}
 function save(){ saveSets(); }
-function saveCustom(){ saveSets(); }
-function savePrac(){ saveSets(); }
+function saveCustom(){ saveSets(); 
+  if(typeof cbMarkDirty==='function') cbMarkDirty();}
+function savePrac(){ saveSets(); 
+  if(typeof cbMarkDirty==='function') cbMarkDirty();}
 function saveCfg(){
   if(isGuest()) return;
   try{ localStorage.setItem(K_CFG, JSON.stringify(state.cfg)); }catch(e){}
-}
+
+  if(typeof cbMarkDirty==='function') cbMarkDirty();}
 
 /* =========================================================
    业务数据层（本预览入口不读写任何业务数据）
@@ -1073,7 +1077,8 @@ function cidsLoad(){
 function cidsSave(){
   if(isGuest()) return;
   try{ localStorage.setItem(K_CIDS, JSON.stringify(state.cidsSets)); }catch(e){}
-}
+
+  if(typeof cbMarkDirty==='function') cbMarkDirty();}
 
 /* ---------- 本地记录 → 云端字段（每条都烙上「评价阶段」，两轮材料才不会串） ---------- */
 function customRow(rec, stage){
@@ -5245,6 +5250,234 @@ var API_BASES = [
   /* Cloudflare Workers（备用，外网可用） */
   'https://scholarship-code.jqp-gongjiang.workers.dev'
 ];
+
+/* ===== CloudBase 集成层（设备免验证 + 多端同步）=====
+/* =========================================================
+   CloudBase 集成层
+   —— 设备免验证 + 业务数据多端同步
+   分层：存储 → 同步调度 → 渲染调用（单向，无环）
+   ========================================================= */
+
+var CB_BASE = (function () {
+  for (var i = 0; i < API_BASES.length; i++) {
+    if (API_BASES[i] && API_BASES[i].indexOf('tcloudbase') > 0) return API_BASES[i];
+  }
+  return API_BASES[0] || '';
+})();
+
+var K_TOK   = 'wb_nsch_devtoken';   /* 本机设备 token */
+var K_PUSH  = 'wb_nsch_outbox';    /* 待同步队列 */
+var K_CLOUDT= 'wb_nsch_cloudts';    /* 上次同步的云端时间戳 */
+
+var CB = {
+  ready:false,        /* 云端是否可用 */
+  token:'',           /* 本机设备 token */
+  isAdmin:false,      /* 当前是否管理员 */
+  pushTimer:null,
+  pulling:false,
+  dirty:false,
+  lastTs:0
+};
+
+/* ---------- 存储层：读写本机 token ---------- */
+function cbTokenGet(){
+  if(CB.token) return CB.token;
+  try{ CB.token = localStorage.getItem(K_TOK) || ''; }catch(e){ CB.token = ''; }
+  return CB.token;
+}
+function cbTokenSet(t){
+  CB.token = t || '';
+  try{
+    if(CB.token) localStorage.setItem(K_TOK, CB.token);
+    else localStorage.removeItem(K_TOK);
+  }catch(e){}
+}
+function cbTokenClear(){ cbTokenSet(''); }
+
+/* ---------- 存储层：待同步队列 ---------- */
+function cbOutbox(){
+  try{
+    var s = localStorage.getItem(K_PUSH);
+    var a = s ? JSON.parse(s) : [];
+    return Array.isArray(a) ? a : [];
+  }catch(e){ return []; }
+}
+function cbOutboxSave(a){
+  try{ localStorage.setItem(K_PUSH, JSON.stringify(a || [])); }catch(e){}
+}
+function cbOutboxClear(){ cbOutboxSave([]); }
+
+/* ---------- 请求层：统一封装（自动带设备 token） ---------- */
+function cbApi(path, body){
+  var opt = { method: body ? 'POST' : 'GET', headers: {} };
+  if(body){
+    opt.headers['Content-Type'] = 'application/json';
+    opt.body = JSON.stringify(body);
+  }
+  var tk = cbTokenGet();
+  if(tk) opt.headers['X-Device-Token'] = tk;
+  return fetch(CB_BASE + path, opt).then(function(r){
+    return r.json().catch(function(){ return { ok:false, error:'返回异常 HTTP ' + r.status }; });
+  });
+}
+
+/* ---------- 业务层：设备免验证 ---------- */
+/* 静默校验本机 token 是否仍有效 */
+function cbCheckDevice(cb){
+  var tk = cbTokenGet();
+  if(!tk){ cb(false, '本机未注册'); return; }
+  cbApi('/api/device/check').then(function(d){
+    if(d && d.ok) cb(true, d.name || '');
+    else { cbTokenClear(); cb(false, (d && d.error) || '设备未授权'); }
+  }).catch(function(){ cb(false, '网络不可用'); });
+}
+
+/* 用管理员密码换取长期 token */
+function cbLoginDevice(pwd, name, cb){
+  fetch(CB_BASE + '/api/device/login', {
+    method:'POST',
+    headers:{ 'Content-Type':'application/json', 'X-Admin-Password': pwd },
+    body: JSON.stringify({ name: name || '' })
+  }).then(function(r){ return r.json(); })
+    .then(function(d){
+      if(d && d.ok && d.token){ cbTokenSet(d.token); cb(true, d.name || name || '本设备'); }
+      else cb(false, (d && d.error) || '注册失败');
+    })
+    .catch(function(e){ cb(false, '无法连接服务器'); });
+}
+
+/* ---------- 业务层：数据拉取 ---------- */
+function cbPull(force){
+  if(!CB.isAdmin) return Promise.resolve(false);
+  if(CB.pulling && !force) return Promise.resolve(false);
+  CB.pulling = true;
+  return cbApi('/api/data/get').then(function(d){
+    CB.pulling = false;
+    if(!d || !d.ok){
+      if(d && /未授权/.test(d.error || '')) cbTokenClear();
+      cbStatus(d && /未授权/.test(d.error || '') ? 'off' : 'err');
+      return false;
+    }
+    CB.ready = true;
+    CB.lastTs = d.updatedAt || 0;
+    cbTsSave(d.updatedAt || 0);
+    cbStatus('online');
+
+    if(d.payload == null) return false;          /* 云端还没数据，不覆盖本地 */
+
+    /* 后写覆盖策略：云端时间戳比本机新才覆盖，
+       否则说明本机更新过，跳过（由 push 负责上传） */
+    var localDirty = cbOutbox().length > 0;
+    if(!force && localDirty && (d.updatedAt || 0) <= CB.lastLocalTs) return false;
+
+    try{ adoptSets(d.payload.sets || d.payload); }catch(e){}
+    if(d.payload.cfg){
+      state.cfg = d.payload.cfg;
+      try{ localStorage.setItem(K_CFG, JSON.stringify(state.cfg)); }catch(e){}
+      if(state.cfg.stage) state.stage = normStage(state.cfg.stage);
+    }
+    cbTsSave(d.updatedAt || 0);
+    if(typeof refreshAll === 'function') refreshAll();
+    return true;
+  }).catch(function(){
+    CB.pulling = false;
+    cbStatus('err');
+    return false;
+  });
+}
+
+function cbTsSave(ts){
+  try{ CB.lastLocalTs = ts || 0; localStorage.setItem(K_CLOUDT, String(ts || 0)); }catch(e){}
+}
+
+/* ---------- 业务层：数据推送（后写覆盖） ---------- */
+function cbPush(){
+  if(!CB.isAdmin) return Promise.resolve(false);
+  if(cbOutbox().length === 0) return Promise.resolve(false);
+  var payload = { sets: state.sets, cfg: state.cfg };
+  return cbApi('/api/data/put', { payload: payload }).then(function(d){
+    if(d && d.ok){
+      cbOutboxClear();
+      cbTsSave(d.updatedAt || 0);
+      cbStatus('online');
+      return true;
+    }
+    cbStatus('err');
+    return false;
+  }).catch(function(){ cbStatus('err'); return false; });
+}
+
+/* 标记本地有改动并排队 */
+function cbMarkDirty(){
+  if(!CB.isAdmin) return;                 /* 访客不保存 */
+  CB.dirty = true;
+  var a = cbOutbox();
+  a.push({ t: Date.now() });
+  if(a.length > 60) a = a.slice(-60);
+  cbOutboxSave(a);
+  if(typeof setSyncUI === 'function') setSyncUI('syncing');
+  /* 800ms 防抖：连续操作合并成一次上传 */
+  if(CB.pushTimer) clearTimeout(CB.pushTimer);
+  CB.pushTimer = setTimeout(function(){ cbPush(); }, 800);
+}
+
+/* ---------- 状态指示 ---------- */
+function cbStatus(mode){
+  try{ if(typeof setSyncUI === 'function') setSyncUI(mode); }catch(e){}
+}
+
+/* ---------- 轮询与触发 ---------- */
+function cbStartAuto(){
+  if(CB.poller) return;
+  CB.poller = setInterval(function(){
+    if(document.hidden) return;
+    cbPull(false);
+  }, 20000);
+
+  document.addEventListener('visibilitychange', function(){
+    if(!document.hidden) cbPull(false);
+  });
+  window.addEventListener('online', function(){ cbPull(false); });
+}
+
+/* 初始化：先验本机 token，再决定角色 */
+function cbBoot(){
+  try{ CB.lastLocalTs = Number(localStorage.getItem(K_CLOUDT) || 0); }catch(e){ CB.lastLocalTs = 0; }
+  var savedRole = '';
+  try{ savedRole = localStorage.getItem('wb_nsch_role') || ''; }catch(e){}
+
+  if(savedRole !== 'admin'){ cbStatus('off'); return; }   /* 访客不启动同步 */
+
+  cbCheckDevice(function(okDev, name){
+    if(okDev){
+      CB.isAdmin = true;
+      cbStatus('init');
+      cbPull(true).then(function(){
+        cbStartAuto();
+      });
+    } else {
+      /* 本机 token 失效 → 退回访客体验，需要重新输管理员密码 */
+      try{ localStorage.removeItem('wb_nsch_role'); }catch(e){}
+      CB.isAdmin = false;
+      cbStatus('off');
+    }
+  });
+}
+
+/* 管理员登录成功后调用 */
+function cbOnAdminLogin(pwd, name){
+  cbLoginDevice(pwd, name, function(okDev, devName){
+    if(!okDev){ cbTokenClear(); cb(falseMsg); return; }
+    CB.isAdmin = true;
+    try{ localStorage.setItem('wb_nsch_role', 'admin'); }catch(e){}
+    /* 登录即把本地数据推上云（首次登录时完成迁移） */
+    cbMarkDirty();
+    setTimeout(function(){
+      cbPull(true).then(function(){ cbStartAuto(); });
+    }, 400);
+  });
+}
+
 /* 记住上次能用的地址，下次优先用它 */
 var API_BASE = '';
 try{ API_BASE = localStorage.getItem('wb_sch_api') || ''; }catch(e){}
@@ -5389,16 +5622,40 @@ function adminLogin(){
   if(!val){ $('#adminMsg').textContent = '请输入管理员密码'; return; }
   $('#adminMsg').textContent = '正在验证…';
   adminState.pwd = val;
+  adminState._devDone = false;
   adminRefresh();
+}
+
+/* 密码校验通过后的后续动作：把本机登记为可信设备 */
+function adminRefreshTail(){
+  if(adminState._devDone) return;
+  adminState._devDone = true;
+  if(typeof cbOnAdminLogin === 'function'){
+    cbOnAdminLogin(adminState.pwd, guessDeviceName());
+  }
+  adminState._devDone = false;
+}
+
+function guessDeviceName(){
+  var ua = navigator.userAgent || '';
+  var os = /iPhone|iPad|iPod/i.test(ua) ? 'iPhone'
+         : /Android/i.test(ua) ? 'Android手机'
+         : /Mac OS X/i.test(ua) ? 'Mac电脑'
+         : /Windows/i.test(ua) ? 'Windows电脑'
+         : '未知设备';
+  return os;
 }
 function adminRefresh(){
   $('#adminMsg').textContent = '正在加载…';
   api('/api/list', null, adminState.pwd).then(function(d){
     if(d && d.ok){
       adminState.codes = d.codes || [];
+      adminState.ok = true;
       $('#adminMsg').textContent = '';
       renderAdminList();
+      return adminRefreshTail();
     }else{
+      adminState.ok = false;
       if(!adminState.pwd || !/密码/.test((d && d.error) || '')) adminState.pwd = '';
       $('#adminMsg').textContent = (d && d.error) || '验证失败';
     }
@@ -5569,7 +5826,13 @@ function enterWorkbench(){
   refreshAll();
   bindGlobal();
   applyRoleUI();
-  /* 访客入口不启动业务数据同步（仅访问码走云端查询） */
+  /* 访客：只读，不保存不启动同步；管理员：启动多端同步 */
+  if(SESSION.role === 'admin'){
+    if(typeof cbStartAuto === 'function') cbStartAuto();
+    if(typeof cbMarkDirty === 'function') cbMarkDirty();
+  } else if(typeof cbStatus === 'function'){
+    cbStatus('off');
+  }
 }
 
 /* 校验访问码：从云端「访问验证码」表核验（码由分享者在自己的工作台生成） */
@@ -5615,7 +5878,34 @@ function bindGate(){
 }
 function boot(){
   bindGate();
-  /* 不记忆登录状态：每次打开都要重新输入访问码 */
+  /* 启动时先问一次：本机是不是已登记的可信管理员设备。
+     是 → 直接进入工作台，完全跳过访问码页；
+     否 → 显示访问码页（访客或未登记设备）。 */
+  var savedRole = '';
+  try{ savedRole = localStorage.getItem('wb_nsch_role') || ''; }catch(e){}
+  var hasTok = false;
+  try{ hasTok = !!localStorage.getItem('wb_nsch_devtoken'); }catch(e){}
+
+  if(savedRole === 'admin' && hasTok){
+    gateErr('正在验证本设备…', true);
+    cbCheckDevice(function(okDev, devName){
+      if(okDev){
+        SESSION.role = 'admin';
+        SESSION.code = 'device';
+        if(typeof cbBoot === 'function') cbBoot();
+        enterWorkbench();
+      } else {
+        /* token 失效 → 清掉，退回访问码页 */
+        try{ localStorage.removeItem('wb_nsch_role'); }catch(e){}
+        cbTokenClear();
+        gateShow();
+        var inp0 = $('#gateInput');
+        if(inp0){ setTimeout(function(){ try{ inp0.focus(); }catch(e){} }, 260); }
+      }
+    });
+    return;
+  }
+
   gateShow();
   var inp = $('#gateInput');
   if(inp){ setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 260); }
