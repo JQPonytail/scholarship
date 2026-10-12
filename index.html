@@ -645,6 +645,18 @@ footer.ft{text-align:center;padding:22px 16px;color:var(--ink-3);font-size:12px;
 }
 .ap-fab.on{display:flex}
 .ap-fab:active{transform:scale(.94)}
+/* 顶部「生成访问码」按钮：管理员可见，文字明确，不再靠图标猜 */
+.hd-code-btn{
+  display:none;align-items:center;gap:6px;
+  min-height:44px;padding:0 16px;margin-bottom:8px;
+  border:0;border-radius:10px;cursor:pointer;font-family:inherit;
+  background:linear-gradient(135deg,#c8102e,#a30d25);color:#fff;
+  font-size:14px;font-weight:800;letter-spacing:.5px;
+  box-shadow:0 4px 14px rgba(200,16,46,.32);
+}
+.hd-code-btn.on{display:inline-flex}
+.hd-code-btn:active{transform:translateY(1px)}
+.hd-code-btn:hover{box-shadow:0 6px 20px rgba(200,16,46,.42)}
 /* ---- 可信设备管理 ---- */
 .ap-pwd-row.hidden{display:none}
 .ap-dev{margin-top:18px;padding-top:16px;border-top:1px solid #e8edf5}
@@ -874,6 +886,13 @@ body.locked > .mask{display:none !important}
       </div>
       <div style="text-align:right">
         <div class="hd-actions">
+          <!-- 管理员专属：生成临时访问码的入口。
+               之前只有右下角一个 54px 悬浮小锁图标，手机上极易被忽略，
+               导致管理员完全找不到发码的地方。 -->
+          <button type="button" class="hd-code-btn" id="btnCodeTop" onclick="apOpen()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/><path d="M12 15v2"/></svg>
+            生成访问码
+          </button>
           <span class="pv-tag" id="pvTag">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
             预览模式 · 改动不保存
@@ -5441,8 +5460,27 @@ function cbApi(path, body){
   }
   var tk = cbTokenGet();
   if(tk) opt.headers['X-Device-Token'] = tk;
-  return fetch(CB_BASE + path, opt).then(function(r){
+
+  /* 必须加超时。
+     手机端（尤其是移动网络切换、弱网、后台唤醒后）fetch 可能长时间挂起不返回，
+     若不设超时，调用方的 then/catch 永远不会触发，
+     boot() 就会卡在「正在验证本设备…」——用户看到的现象就是
+     「刷新后一直要求重新登录」，而日志里什么错误都没有。 */
+  var timedOut = false;
+  var timer = setTimeout(function(){
+    timedOut = true;
+  }, 12000);
+
+  function parse(r){
     return r.json().catch(function(){ return { ok:false, error:'返回异常 HTTP ' + r.status }; });
+  }
+  return fetch(CB_BASE + path, opt).then(function(r){
+    clearTimeout(timer);
+    if(timedOut) throw new Error('请求超时');
+    return parse(r);
+  }).catch(function(e){
+    clearTimeout(timer);
+    throw e;
   });
 }
 
@@ -6036,6 +6074,8 @@ function applyRoleUI(){
     if(ids[k] === 'btnAdmin'){
       var fab = $('#btnAdmin');
       if(fab) fab.classList.toggle('on', !guest);   /* 悬浮发码按钮 */
+      var top = $('#btnCodeTop');
+      if(top) top.classList.toggle('on', !guest);   /* 顶部发码按钮 */
     }else{
       el.style.display = guest ? 'none' : '';
     }
@@ -6285,7 +6325,28 @@ function bindGate(){
 }
 function boot(){
   bindGate();
-  /* 启动时先问一次：本机是不是已登记的可信管理员设备。
+  var gateNetRetry = 0;
+var gateNetTimer = null;
+/* 在门禁页显示一条状态提示（不遮挡主操作） */
+function gateNetMsg(txt){
+  var el = $('#gateMsgNet');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'gateMsgNet';
+    el.className = 'gate-note';
+    el.style.cssText = 'color:#1a7f4b;font-weight:700;text-align:center;';
+    var card = $('.gate-card');
+    if(card) card.appendChild(el);
+  }
+  el.textContent = txt || '';
+}
+/* 递归重试入口：重新执行 boot 的设备校验分支 */
+function gateAdminRetry(){
+  if(!gateNetTimer){ clearTimeout(gateNetTimer); gateNetTimer = null; }
+  boot();
+}
+
+/* 启动时先问一次：本机是不是已登记的可信管理员设备。
      是 → 直接进入工作台，完全跳过访问码页；
      否 → 显示访问码页（访客或未登记设备）。 */
   var savedRole = '';
@@ -6323,19 +6384,35 @@ function boot(){
          这是手机端反复要求重输密码的根因：
          一旦网络抖动就 cbTokenClear()，长期凭证被永久删除。 */
       if(!rejected){
-        gateShow();
-        var msg0 = $('#gateMsgNet');
-        if(!msg0){
-          msg0 = document.createElement('div');
-          msg0.id = 'gateMsgNet';
-          msg0.className = 'gate-note';
-          msg0.style.cssText = 'color:#1a7f4b;font-weight:700;';
-          var g0 = $('#gate');
-          if(g0 && g0.firstChild) g0.firstChild.appendChild(msg0);
+        /* 网络抖动 / 请求挂起：凭证还在，自动重试，
+           成功就直接进工作台，用户完全无感。 */
+        if(!gateNetRetry || gateNetRetry >= 3){
+          gateShow();
+          gateNetMsg('网络未连通，正在重试（' + (gateNetRetry || 0) + '/3）。凭证已保留，不会要求重新输入密码。');
+          if(!gateNetTimer){
+            gateNetTimer = setTimeout(function(){ location.reload(); }, 5000);
+          }
+          return;
         }
-        msg0.textContent = '网络未连通，已保留本机免验证凭证，联网后刷新页面即可直接进入。';
-        var inpN = $('#gateInput');
-        if(inpN){ setTimeout(function(){ try{ inpN.focus(); }catch(e){} }, 260); }
+        gateNetRetry++;
+        gateShow();
+        gateNetMsg('正在重试本设备免验证（' + gateNetRetry + '/3）…');
+        setTimeout(function(){
+          cbCheckDevice(function(ok2, name2, rej2){
+            if(ok2){
+              SESSION.role = 'admin';
+              SESSION.code = 'device';
+              if(typeof cbBoot === 'function') cbBoot();
+              enterWorkbench();
+            }else if(rej2){
+              try{ localStorage.removeItem('wb_nsch_role'); }catch(e){}
+              gateShow();
+            }else{
+              /* 再试一次 */
+              gateAdminRetry();
+            }
+          });
+        }, 1500);
         return;
       }
       /* 服务端明确说 token 无效 → 清掉，退回访问码页 */
