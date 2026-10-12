@@ -562,6 +562,20 @@ footer.ft{text-align:center;padding:22px 16px;color:var(--ink-3);font-size:12px;
   border:1px solid #d5dce8;border-radius:9px;background:#fff;color:#16233c;
 }
 .ap-field input:focus,.ap-field select:focus{outline:none;border-color:var(--primary,#c8102e)}
+/* 密码框 + 小眼睛 */
+.pw-wrap{position:relative}
+.pw-wrap input{padding-right:46px}
+.pw-eye{
+  position:absolute;right:4px;top:50%;transform:translateY(-50%);
+  width:44px;height:44px;display:flex;align-items:center;justify-content:center;
+  background:transparent;border:none;border-radius:8px;cursor:pointer;
+  color:#93a1b8;padding:0;transition:color .16s;
+}
+.pw-eye:hover{color:var(--primary,#c8102e);background:#fff7f8}
+.pw-eye .eye-off{display:none}
+.pw-wrap.show .pw-eye .eye-on{display:none}
+.pw-wrap.show .pw-eye .eye-off{display:block}
+.pw-wrap.show .pw-eye{color:var(--primary,#c8102e)}
 .ap-btn{
   width:100%;margin-top:8px;padding:12px;min-height:44px;
   background:#fff;border:1px solid #d5dce8;border-radius:9px;
@@ -686,7 +700,14 @@ body.locked > .mask{display:none !important}
       <div class="ap-title">管理员发码面板</div>
       <div class="ap-field">
         <label for="adminPwd">管理员密码</label>
-        <input type="password" id="adminPwd" placeholder="输入管理员密码" autocomplete="off">
+        <div class="pw-wrap">
+          <input type="password" id="adminPwd" placeholder="输入管理员密码" autocomplete="off">
+          <button type="button" class="pw-eye" id="adminEye" onclick="togglePwd()"
+                  aria-label="显示密码" title="点击显示密码">
+            <svg class="eye-on" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 12S5 5.5 12 5.5 22.5 12 22.5 12 19 18.5 12 18.5 1.5 12 1.5 12z"/><circle cx="12" cy="12" r="3.2"/></svg>
+            <svg class="eye-off" width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.9 17.9A10.4 10.4 0 0112 19.5C5 19.5 1.5 12 1.5 12a19 19 0 015-6M9.9 5.7A10.6 10.6 0 0112 5.5c7 0 10.5 6.5 10.5 6.5a19.4 19.4 0 01-2.3 3.3M9.9 9.9a3.2 3.2 0 004.3 4.3"/><path d="M2.5 2.5l19 19"/></svg>
+          </button>
+        </div>
         <button class="ap-btn" onclick="adminLogin()">验证并加载</button>
       </div>
       <div class="ap-msg" id="adminMsg"></div>
@@ -5229,6 +5250,21 @@ function verifyGuestCode(input, cb){
 
 /* ---------- 管理员发码面板 ---------- */
 var adminState = { pwd: '', codes: [] };
+/* 密码显示切换（小眼睛） */
+function togglePwd(){
+  var inp = $('#adminPwd');
+  var wrap = $('#adminPwd') ? $('#adminPwd').parentNode : null;
+  if(!inp || !wrap) return;
+  var show = inp.type === 'password';
+  inp.type = show ? 'text' : 'password';
+  wrap.classList.toggle('show', show);
+  var eye = $('#adminEye');
+  if(eye){
+    eye.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
+    eye.setAttribute('title', show ? '点击隐藏密码' : '点击显示密码');
+  }
+  try{ inp.focus(); inp.select(); }catch(e){}
+}
 function adminToggle(){
   var p = $('#adminPanel');
   if(!p) return;
