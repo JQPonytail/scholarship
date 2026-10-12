@@ -96,6 +96,21 @@ function pathOf(event) {
     const rc = event.requestContext;
     p = rc.path || (rc.http && rc.http.path) || '';
   }
+  // HTTP 网关开启「路由透传」后，真实路径在 headers 或原始路径里
+  if (!p || p === '/') {
+    const h = event.headers || event.header || {};
+    for (const k in h) {
+      const lk = String(k).toLowerCase();
+      if ((lk === 'x-original-path' || lk === 'x-original-uri' || lk === 'x-path' || lk === 'original-path') && h[k]) {
+        p = String(h[k]).split('?')[0];
+        break;
+      }
+    }
+  }
+  if (typeof event.queryStringParameters === 'object' && event.queryStringParameters) {
+    const qp = event.queryStringParameters;
+    if (!p || p === '/') { if (qp.path) p = String(qp.path); }
+  }
   p = String(p || '/').split('?')[0];
   // 兼容把 /api/xxx 挂在自定义路径下（如 /code-api/api/verify）
   const i = p.indexOf('/api/');
