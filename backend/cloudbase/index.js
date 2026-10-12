@@ -12,10 +12,6 @@
 //  所有接口共用同一个云函数，通过 event.path 区分
 // ============================================================
 
-// 注意：不 require 任何外部 SDK。
-// CloudBase 云函数运行时自带全局 cloudbase 对象（Node 8+ 内置），
-// 直接用即可。require('@cloudbase/node-sdk') 在 Node20 环境会报模块找不到。
-
 // ---------- 配置 ----------
 const ADMIN_PASSWORD = 'JQP@2026';
 const DB = 'scholarship';          // 数据表名
@@ -23,15 +19,41 @@ const COLL = 'codes';              // 集合名
 const MAX_CODES = 500;             // 最多保留多少条历史码
 
 // ---------- CloudBase 初始化 ----------
+// Node 20 环境实测：没有全局 cloudbase 对象，必须 require SDK。
+// 依赖 @cloudbase/node-sdk 需要 package.json 声明后由平台自动安装。
 let db;
 function getDb() {
   if (db) return db;
   const g = globalThis;
-  const api = g.cloudbase || (g.tcb && g.tcb.cloudbase);
-  if (!api || typeof api.init !== 'function') {
-    throw new Error('CloudBase 运行时未就绪：找不到全局 cloudbase 对象');
+
+  // 路线 1：运行时内置全局对象（部分环境有）
+  try {
+    const api = g.cloudbase || (g.tcb && g.tcb.cloudbase);
+    if (api && typeof api.init === 'function') {
+      const app = api.init({ env: api.SYMBOL_CURRENT_ENV });
+      if (app && typeof app.database === 'function') {
+        db = app.database();
+        return db;
+      }
+    }
+  } catch (e) {}
+
+  // 路线 2：SDK（Node20 走这条）
+  let app = null;
+  try {
+    const SDK = require('@cloudbase/node-sdk');
+    app = SDK.init({ env: SDK.SYMBOL_CURRENT_ENV });
+  } catch (e) {
+    try {
+      const g2 = g.cloudbase;
+      app = g2.init({ env: g2.SYMBOL_CURRENT_ENV });
+    } catch (e2) {
+      throw new Error('CloudBase 初始化失败：' + (e && e.message ? e.message : e));
+    }
   }
-  const app = api.init({ env: api.SYMBOL_CURRENT_ENV });
+  if (!app || typeof app.database !== 'function') {
+    throw new Error('CloudBase 初始化失败：SDK 无 database 方法');
+  }
   db = app.database();
   return db;
 }
