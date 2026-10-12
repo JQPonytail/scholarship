@@ -5240,6 +5240,9 @@ function errText(e){
    连不上时自动改走文件通道，保证功能可用（代价：码的「已用」状态需手动更新）。
    想彻底解决，把后端迁到腾讯云等国内平台即可，页面代码不用改。 */
 var API_BASES = [
+  /* CloudBase（国内直连，优先） */
+  'https://scholarship-d6gbjhntd4751793f-1505082202.ap-shanghai.app.tcloudbase.com',
+  /* Cloudflare Workers（备用，外网可用） */
   'https://scholarship-code.jqp-gongjiang.workers.dev'
 ];
 /* 记住上次能用的地址，下次优先用它 */
