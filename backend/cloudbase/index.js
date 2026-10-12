@@ -322,10 +322,12 @@ async function auth(event) {
 
 // 设备列表 + 移除
 async function handleDeviceList(event) {
-  if (!adminOk(event)) return fail('管理员密码错误');
+  const a = await auth(event);
+  if (!a) return fail('未授权：请输入管理员密码', 401);
   const res = await getDb().collection(DEV_COLL).limit(50).get();
   const list = (res && res.data) || [];
-  const t = now();
+  // 标记哪一台是「本机」：比对请求带的 token
+  const myHash = (a.device && a.device.tokenHash) || '';
   return ok({
     ok: true,
     devices: list.map(d => ({
@@ -333,14 +335,16 @@ async function handleDeviceList(event) {
       name: d.name,
       createdAt: d.createdAt || 0,
       lastSeenAt: d.lastSeenAt || 0,
-      ua: d.ua || ''
-    })).sort((a, b) => (b.lastSeenAt || 0) - (a.lastSeenAt || 0))
+      ua: d.ua || '',
+      isMe: !!(myHash && d.tokenHash === myHash)
+    })).sort((b2, a2) => (a2.lastSeenAt || 0) - (b2.lastSeenAt || 0))
   });
 }
 
 // 移除某个设备（需管理员密码，防止 token 泄露后无法反制）
 async function handleDeviceRevoke(event) {
-  if (!adminOk(event)) return fail('管理员密码错误');
+  const a0 = await auth(event);
+  if (!a0) return fail('未授权：请输入管理员密码', 401);
   const body = parseBody(event);
   const id = String(body.id || '').trim();
   if (!id) return fail('缺少设备 id');
