@@ -1,0 +1,7 @@
+{
+  "codes": [
+    { "code": "829417", "expires": 1794384764000, "used": false, "note": "示例：给朋友A" },
+    { "code": "361502", "expires": 1794384764000, "used": false, "note": "示例：给朋友B" },
+    { "code": "704839", "expires": 1794384764000, "used": false, "note": "示例：备用" }
+  ]
+}
