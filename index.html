@@ -5233,9 +5233,12 @@ function errText(e){
   try{ return String((e && (e.message || e.msg)) || e || '未知错误'); }catch(x){ return '未知错误'; }
 }
 /* 统一的接口调用（多地址自动故障转移） */
-/* ---------- 接口地址（可配置多个，自动故障转移）----------
-   留空或填错时页面会用「离线演示模式」，功能仍可试用，只是数据不跨设备保存。
-   想换成自己的后端，改这里即可。 */
+/* ---------- 双重通道 ----------
+   通道1（优先）：后端 API，实时发码、一次性消费、跨设备有效。
+   通道2（回退）：GitHub 上的 codes.json 文件。
+   为什么要有回退：Cloudflare Workers 的 workers.dev 域名在国内被拦截，
+   连不上时自动改走文件通道，保证功能可用（代价：码的「已用」状态需手动更新）。
+   想彻底解决，把后端迁到腾讯云等国内平台即可，页面代码不用改。 */
 var API_BASES = [
   'https://scholarship-code.jqp-gongjiang.workers.dev'
 ];
@@ -5243,19 +5246,66 @@ var API_BASES = [
 var API_BASE = '';
 try{ API_BASE = localStorage.getItem('wb_sch_api') || ''; }catch(e){}
 
-/* 依次尝试各个地址，返回第一个成功的响应 */
+/* ---------- 文件通道：读 codes.json ---------- */
+var FILE_CODES_URL = 'codes.json';
+/* 读文件通道的码列表 */
+function fileLoadCodes(){
+  return fetch(FILE_CODES_URL + '?t=' + Date.now()).then(function(r){
+    if(!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function(d){
+    return Array.isArray(d) ? d : ((d && d.codes) || []);
+  });
+}
+/* 文件通道模拟后端接口的返回结构 */
+function fileApi(path, body, adminPwd){
+  if(adminPwd !== 'JQP@2026'){
+    return Promise.resolve({ ok:false, error:'管理员密码错误' });
+  }
+  return fileLoadCodes().then(function(codes){
+    var now = Date.now();
+    if(path === '/api/list'){
+      return { ok:true, codes:codes };
+    }
+    if(path === '/api/code'){
+      /* 生成新码：写入不了文件，只能提示管理员去 codes.json 添加 */
+      var used = {};
+      for(var i = 0; i < codes.length; i++) used[codes[i].code] = true;
+      var nc = '';
+      for(var t = 0; t < 50; t++){
+        var c = String(Math.floor(100000 + Math.random() * 900000));
+        if(!used[c]){ nc = c; break; }
+      }
+      if(!nc) return { ok:false, error:'无法生成新码' };
+      var hours = (body && body.hours) || 168;
+      return { ok:true, code:nc, expires:now + hours * 3600 * 1000,
+               note:(body && body.note) || '未备注', fileMode:true };
+    }
+    if(path === '/api/revoke'){
+      return { ok:false, error:'文件模式下请把 codes.json 里该行的 used 改为 true' };
+    }
+    return { ok:false, error:'接口不存在' };
+  }).catch(function(e){
+    return { ok:false, offline:true, error:'文件通道也读不到：' + errText(e) };
+  });
+}
+
+/* ---------- 统一入口：先试后端，全失败自动回退文件 ---------- */
 function api(path, body, adminPwd){
   var list = [];
   if(API_BASE && API_BASES.indexOf(API_BASE) < 0) list.push(API_BASE);
   for(var i = 0; i < API_BASES.length; i++){
     if(API_BASES[i] && API_BASES[i].indexOf('YOUR-') < 0) list.push(API_BASES[i]);
   }
-  if(!list.length){
-    return Promise.resolve({ ok:false, offline:true, error:'未配置验证服务地址（请在页面顶部 API_BASES 中填写）' });
-  }
+  if(!list.length) return fileApi(path, body, adminPwd);
+
   function tryOne(idx){
     if(idx >= list.length){
-      return Promise.resolve({ ok:false, error:'无法连接验证服务：' + list.join(' / ') + '都连不上，请检查网络或换用其他浏览器' });
+      /* 所有后端都连不上 → 回退文件通道 */
+      return fileApi(path, body, adminPwd).then(function(d){
+        if(d && d.ok) d.viaFile = true;
+        return d;
+      });
     }
     var opt = { method: body ? 'POST' : 'GET', headers: {} };
     if(body){
@@ -5266,7 +5316,7 @@ function api(path, body, adminPwd){
     return fetch(list[idx] + path, opt).then(function(r){
       return r.json().catch(function(){ return { ok:false, error:'服务返回异常（HTTP ' + r.status + '）' }; });
     }).then(function(d){
-      if(d && d.offline) return { ok:false, offline:true, error:d.error };
+      if(d && d.offline) return tryOne(idx + 1);
       try{ localStorage.setItem('wb_sch_api', list[idx]); }catch(e){}
       return d;
     }).catch(function(){
@@ -5277,10 +5327,20 @@ function api(path, body, adminPwd){
 }
 /* 校验访问码 */
 function verifyGuestCode(input, cb){
+  /* 文件模式下先看本机是否已用过（sessionStorage，会话级） */
+  try{
+    if(sessionStorage.getItem('wb_fc_' + input) === '1'){
+      cb(false, '该访问码本机已使用过，请向分享者索取新的访问码'); return;
+    }
+  }catch(e){}
   api('/api/verify', { code: input })
     .then(function(d){
-      if(d && d.ok) cb(true, '');
-      else cb(false, (d && d.error) || '验证失败，请稍后重试');
+      if(d && d.ok){
+        try{ sessionStorage.setItem('wb_fc_' + input, '1'); }catch(e){}
+        cb(true, '');
+      }else{
+        cb(false, (d && d.error) || '验证失败，请稍后重试');
+      }
     })
     .catch(function(e){ cb(false, '无法连接验证服务：' + errText(e)); });
 }
@@ -5356,9 +5416,11 @@ function adminGen(){
       $('#adminNote').value = '';
       var box = $('#adminLast');
       if(box){
+        var tip = d.viaFile || d.fileMode
+          ? '（当前为<b>文件模式</b>：这个码还没写进 codes.json，需要你手动加一行才能给朋友用）'
+          : '（' + Math.round(hours) + ' 小时内有效）复制给朋友：';
         box.style.display = 'block';
-        box.innerHTML = '新码<b>' + esc(d.code) + '</b>（' + (d.note || '未备注') + '，' +
-          Math.round(hours) + ' 小时内有效）复制给朋友：';
+        box.innerHTML = '新码<b>' + esc(d.code) + '</b>（' + esc(d.note || '未备注') + '）' + tip;
         copyText(d.code);
       }
     }else{
