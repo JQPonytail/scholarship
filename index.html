@@ -565,6 +565,15 @@ footer.ft{text-align:center;padding:22px 16px;color:var(--ink-3);font-size:12px;
 /* 密码框 + 小眼睛 */
 .pw-wrap{position:relative}
 .pw-wrap input{padding-right:46px}
+/* 密码遮罩：圆点显示，效果同 type=password，但不触发浏览器内置眼睛图标 */
+.pw-masked{
+  -webkit-text-security:disc !important;
+  text-security:disc;
+}
+.pw-wrap.show input.pw-masked{
+  -webkit-text-security:none !important;
+  text-security:none;
+}
 .pw-eye{
   position:absolute;right:4px;top:50%;transform:translateY(-50%);
   width:44px;height:44px;display:flex;align-items:center;justify-content:center;
@@ -697,8 +706,13 @@ body.locked > .mask{display:none !important}
       <div class="ap-title">管理员发码面板</div>
       <div class="ap-field">
         <label for="adminPwd">管理员密码</label>
-        <div class="pw-wrap">
-          <input type="password" id="adminPwd" placeholder="输入管理员密码" autocomplete="off">
+        <!-- 用 text + CSS 遮罩代替 type=password：
+             Chrome 会给 type=password 自动加一个内置的「显示密码」眼睛按钮，
+             该按钮无法用 CSS 关闭，且只在输入后才出现。
+             改用 -webkit-text-security 做圆点遮罩，视觉一致但无内置图标 -->
+          <div class="pw-wrap">
+          <input type="text" id="adminPwd" placeholder="输入管理员密码" autocomplete="off"
+                 class="pw-masked" spellcheck="false">
           <button type="button" class="pw-eye" id="adminEye" onclick="togglePwd()"
                   aria-label="显示密码" title="点击显示密码">
             <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path id="pwEyePath" d="M1.5 12S5 5.5 12 5.5 22.5 12 22.5 12 19 18.5 12 18.5 1.5 12 1.5 12z"/><circle id="pwEyeCircle" cx="12" cy="12" r="3.2"/><path id="pwEyeSlash" d="M2.5 2.5l19 19" style="display:none"/></svg>
@@ -5251,13 +5265,14 @@ var adminState = { pwd: '', codes: [] };
 var EYE_OPEN_D  = 'M1.5 12S5 5.5 12 5.5 22.5 12 22.5 12 19 18.5 12 18.5 1.5 12 1.5 12z';
 var EYE_OPEN_C  = 3.2;
 var EYE_SHUT_D  = 'M17.9 17.9A10.4 10.4 0 0112 19.5C5 19.5 1.5 12 1.5 12a19 19 0 015-6M9.9 5.7A10.6 10.6 0 0112 5.5c7 0 10.5 6.5 10.5 6.5a19.4 19.4 0 01-2.3 3.3M9.9 9.9a3.2 3.2 0 004.3 4.3';
-/* 密码显示切换（小眼睛） */
+/* 密码显示切换（小眼睛）
+   注意：input 是 type="text" + CSS 遮罩，不是 type="password"，
+   因为 Chrome 会给 type=password 加一个无法关闭的内置眼睛按钮。 */
 function togglePwd(){
   var inp = $('#adminPwd');
   var wrap = inp ? inp.parentNode : null;
   if(!inp || !wrap) return;
-  var show = inp.type === 'password';
-  inp.type = show ? 'text' : 'password';
+  var show = !wrap.classList.contains('show');
   wrap.classList.toggle('show', show);
   /* 切换 SVG 内部图形：睁眼 ↔ 闭眼（加斜线） */
   var d = $('#pwEyePath'), c = $('#pwEyeCircle'), s = $('#pwEyeSlash');
@@ -5269,7 +5284,7 @@ function togglePwd(){
     eye.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
     eye.setAttribute('title', show ? '点击隐藏密码' : '点击显示密码');
   }
-  try{ inp.focus(); inp.select(); }catch(e){}
+  try{ inp.focus(); if(show) inp.select(); }catch(e){}
 }
 function adminToggle(){
   var p = $('#adminPanel');
