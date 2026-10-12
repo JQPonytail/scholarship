@@ -543,6 +543,24 @@ footer.ft{text-align:center;padding:22px 16px;color:var(--ink-3);font-size:12px;
 .gate-btn:hover{box-shadow:0 10px 24px rgba(200,16,46,.38)}
 .gate-btn:active{transform:translateY(1px) scale(.995)}
 .gate-note{font-size:11.5px;color:#93a1b8;margin-top:16px;line-height:1.6}
+/* ---- 入口双 Tab：访客 / 管理员 ---- */
+.gate-tabs{
+  display:flex;gap:6px;padding:5px;margin-bottom:22px;
+  background:#eef2f8;border-radius:12px;
+}
+.gate-tab{
+  flex:1;min-height:44px;border:0;border-radius:9px;cursor:pointer;
+  background:transparent;color:#7183a0;font-family:inherit;
+  font-size:14.5px;font-weight:800;letter-spacing:.5px;
+  transition:background .18s,color .18s,box-shadow .18s;
+}
+.gate-tab.on{background:#fff;color:var(--primary,#c8102e);box-shadow:0 2px 8px rgba(22,35,60,.1)}
+.remember-row{
+  display:flex;align-items:center;gap:9px;margin:-2px 0 14px;
+  font-size:13px;color:#3b4c68;cursor:pointer;user-select:none;
+  min-height:44px;
+}
+.remember-row input{width:18px;height:18px;accent-color:var(--primary,#c8102e);cursor:pointer;flex:none}
 .gate.shake .gate-card{animation:gateShake .4s}
 /* ---- 管理员发码面板 ---- */
 .gate-admin-toggle{
@@ -603,6 +621,49 @@ footer.ft{text-align:center;padding:22px 16px;color:var(--ink-3);font-size:12px;
   padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;
 }
 .ap-list{max-height:230px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+/* ---- 发码面板：独立弹层 + 悬浮入口（仅管理员可见） ---- */
+.ap-modal{display:none;position:fixed;inset:0;z-index:1200;align-items:center;justify-content:center;padding:20px;background:rgba(12,20,36,.55)}
+.ap-modal.on{display:flex}
+.ap-modal-card{
+  width:100%;max-width:460px;max-height:88vh;overflow-y:auto;-webkit-overflow-scrolling:touch;
+  background:#fff;border-radius:16px;padding:20px;
+  padding-bottom:calc(20px + env(safe-area-inset-bottom));
+  box-shadow:0 24px 60px rgba(12,20,36,.34);
+}
+.ap-modal-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.ap-x{
+  width:38px;height:38px;border:0;border-radius:10px;background:#f1f4f9;color:#5d6d87;
+  cursor:pointer;display:flex;align-items:center;justify-content:center;flex:none;
+}
+.ap-x:hover{background:#e6ebf4;color:#16233c}
+.ap-fab{
+  display:none;position:fixed;right:18px;bottom:calc(20px + env(safe-area-inset-bottom));
+  width:54px;height:54px;border:0;border-radius:50%;cursor:pointer;
+  background:linear-gradient(135deg,#c8102e,#a30d25);color:#fff;
+  align-items:center;justify-content:center;
+  box-shadow:0 8px 22px rgba(200,16,46,.4);z-index:900;
+}
+.ap-fab.on{display:flex}
+.ap-fab:active{transform:scale(.94)}
+/* ---- 可信设备管理 ---- */
+.ap-pwd-row.hidden{display:none}
+.ap-dev{margin-top:18px;padding-top:16px;border-top:1px solid #e8edf5}
+.ap-dev-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.ap-dev-hd span{font-size:13px;font-weight:800;color:#16233c}
+.ap-mini{
+  min-height:34px;padding:0 12px;border:1px solid #d5dce8;border-radius:8px;
+  background:#fff;color:#5d6d87;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;
+}
+.ap-mini:hover{border-color:var(--primary,#c8102e);color:var(--primary,#c8102e)}
+.ap-dev-tip{font-size:11.5px;color:#93a1b8;line-height:1.6;margin-bottom:10px}
+.ap-dev-row{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  padding:10px 12px;background:#f8fafd;border:1px solid #e4e9f2;border-radius:10px;margin-bottom:7px;
+}
+.ap-dev-row.me{border-color:#b9d7c4;background:#f2fbf5}
+.ap-dev-name{font-size:13px;font-weight:700;color:#16233c}
+.ap-dev-meta{font-size:11px;color:#93a1b8;flex:1;min-width:90px}
+.ap-dev-tag{font-size:10.5px;font-weight:800;color:#1a7f4b;background:#e3f5ea;padding:2px 7px;border-radius:5px}
 .ad-empty{font-size:12px;color:#a6b3c6;text-align:center;padding:16px 0}
 .ad-row{
   display:flex;align-items:center;gap:7px;flex-wrap:wrap;
@@ -684,27 +745,67 @@ body.locked > .mask{display:none !important}
     <div class="gate-ico">
       <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 018 0v4"/><path d="M12 15v2"/></svg>
     </div>
-    <h2 class="gate-title">请输入访问码</h2>
-    <p class="gate-sub">这是受邀才能访问的预览页面，请输入 6 位数字访问码。</p>
-    <div class="gate-field">
-      <label for="gateInput">6 位访问码</label>
-      <input type="text" id="gateInput" autocomplete="off" spellcheck="false" inputmode="numeric"
-             placeholder="6 位数字" maxlength="6">
+    <!-- 入口切换：访客 / 管理员 -->
+    <div class="gate-tabs" role="tablist">
+      <button class="gate-tab on" id="tabGuest" onclick="gateTab('guest')" role="tab">访客进入</button>
+      <button class="gate-tab" id="tabAdmin" onclick="gateTab('admin')" role="tab">管理员</button>
     </div>
-    <div id="gateErr" class="gate-err"></div>
-    <button class="gate-btn" id="gateSubmit">进入预览</button>
-    <div class="gate-note">
-      访问码由分享者生成，一次性使用，用完即失效。<br>
-      关闭后重新打开需要重新输入。
-    </div>
-    <button class="gate-admin-toggle" id="gateAdminToggle" onclick="adminToggle()">
-      我是管理员 · 生成访问码
-    </button>
 
-    <!-- 管理员发码面板 -->
-    <div class="admin-panel" id="adminPanel">
-      <div class="ap-title">管理员发码面板</div>
-      <div class="ap-field">
+    <!-- 访客面板 -->
+    <div class="gate-pane" id="paneGuest">
+      <h2 class="gate-title">请输入访问码</h2>
+      <p class="gate-sub">这是受邀才能访问的预览页面，请输入 6 位数字访问码。</p>
+      <div class="gate-field">
+        <label for="gateInput">6 位访问码</label>
+        <input type="text" id="gateInput" autocomplete="off" spellcheck="false" inputmode="numeric"
+               placeholder="6 位数字" maxlength="6">
+      </div>
+      <div id="gateErr" class="gate-err"></div>
+      <button class="gate-btn" id="gateSubmit">进入预览</button>
+      <div class="gate-note">
+        访问码由分享者生成，一次性使用，用完即失效。
+      </div>
+    </div>
+
+    <!-- 管理员面板 -->
+    <div class="gate-pane" id="paneAdmin" style="display:none">
+      <h2 class="gate-title">管理员登录</h2>
+      <p class="gate-sub">输入管理员密码进入完整工作台，数据自动多端同步。</p>
+      <div class="gate-field">
+        <label for="gateAdminPwd">管理员密码</label>
+        <div class="pw-wrap">
+          <input type="text" id="gateAdminPwd" class="pw-masked" autocomplete="off"
+                 spellcheck="false" placeholder="输入管理员密码">
+          <button type="button" class="pw-eye" id="gateAdminEye" onclick="toggleGatePwd()"
+                  aria-label="显示密码" title="点击显示密码">
+            <svg width="19" height="19" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path id="gEyePath" d="M1.5 12S5 5.5 12 5.5 22.5 12 22.5 12 19 18.5 12 18.5 1.5 12 1.5 12z"/><circle id="gEyeCircle" cx="12" cy="12" r="3.2"/><path id="gEyeSlash" d="M2.5 2.5l19 19" style="display:none"/></svg>
+          </button>
+        </div>
+      </div>
+      <label class="remember-row">
+        <input type="checkbox" id="rememberDevice" checked>
+        <span>记住这台设备（以后打开免验证）</span>
+      </label>
+      <div id="gateAdminErr" class="gate-err"></div>
+      <button class="gate-btn" id="gateAdminSubmit" onclick="gateAdminLogin()">进入工作台</button>
+      <div class="gate-note">
+        勾选后本设备长期免验证；换设备或清除浏览器数据需重新输入。
+      </div>
+    </div>
+
+  </div>
+</div>
+
+
+<!-- ========== 管理员发码面板（独立弹层，仅管理员可见） ========== -->
+<div class="ap-modal" id="apModal">
+  <div class="ap-modal-card">
+    <div class="ap-modal-hd">
+      <span class="ap-title" style="margin:0">管理员发码面板</span>
+      <button type="button" class="ap-x" onclick="apClose()" aria-label="关闭"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M5 5l14 14M19 5L5 19"/></svg></button>
+    </div>
+    <div class="admin-panel on" id="adminPanel">
+      <div class="ap-field ap-pwd-row" id="apPwdRow">
         <label for="adminPwd">管理员密码</label>
         <!-- 用 text + CSS 遮罩代替 type=password：
              Chrome 会给 type=password 自动加一个内置的「显示密码」眼睛按钮，
@@ -737,9 +838,20 @@ body.locked > .mask{display:none !important}
       <div class="ap-last" id="adminLast" style="display:none"></div>
       <div class="ap-tip">点击「复制」即复制到剪贴板<span class="copy-tip" id="copyTip">已复制</span></div>
       <div class="ap-list" id="adminList"></div>
+
+      <!-- 可信设备管理 -->
+      <div class="ap-dev">
+        <div class="ap-dev-hd">
+          <span>可信设备（免验证）</span>
+          <button type="button" class="ap-mini" onclick="devRefresh()">刷新</button>
+        </div>
+        <div class="ap-dev-tip">这些设备打开本站无需再输管理员密码。移除后该设备需重新验证。</div>
+        <div class="ap-dev-list" id="devList"></div>
+      </div>
     </div>
   </div>
 </div>
+<button type="button" class="ap-fab" id="btnAdmin" onclick="apOpen()" aria-label="发码管理" title="发码管理"><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></button>
 
 <!-- ========== 访客模式顶部提示（默认隐藏，仅访客可见） ========== -->
 <div class="guest-bar" id="guestBar">
@@ -762,9 +874,13 @@ body.locked > .mask{display:none !important}
       </div>
       <div style="text-align:right">
         <div class="hd-actions">
-          <span class="pv-tag">
+          <span class="pv-tag" id="pvTag">
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
             预览模式 · 改动不保存
+          </span>
+          <span class="pv-tag" id="pvTagAdmin" style="display:none">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>
+            管理员 · 多端已同步
           </span>
         </div>
       </div>
@@ -5332,15 +5448,25 @@ function cbCheckDevice(cb){
   }).catch(function(){ cb(false, '网络不可用'); });
 }
 
-/* 用管理员密码换取长期 token */
-function cbLoginDevice(pwd, name, cb){
+/* 用管理员密码换取长期 token
+   persist=false 时 token 只放内存（CB.token），不写 localStorage，
+   用于「不记住这台设备」的场景 */
+function cbLoginDevice(pwd, name, cb, persist){
   fetch(CB_BASE + '/api/device/login', {
     method:'POST',
     headers:{ 'Content-Type':'application/json', 'X-Admin-Password': pwd },
     body: JSON.stringify({ name: name || '' })
   }).then(function(r){ return r.json(); })
     .then(function(d){
-      if(d && d.ok && d.token){ cbTokenSet(d.token); cb(true, d.name || name || '本设备'); }
+      if(d && d.ok && d.token){
+        if(persist === false){
+          CB.token = d.token;                       /* 仅内存 */
+        }else{
+          cbTokenSet(d.token);
+          try{ localStorage.setItem('wb_nsch_role', 'admin'); }catch(e){}
+        }
+        cb(true, d.name || name || '本设备');
+      }
       else cb(false, (d && d.error) || '注册失败');
     })
     .catch(function(e){ cb(false, '无法连接服务器'); });
@@ -5609,11 +5735,80 @@ function togglePwd(){
   }
   try{ inp.focus(); if(show) inp.select(); }catch(e){}
 }
-function adminToggle(){
+/* ---------- 可信设备管理 ---------- */
+function fmtTime(ts){
+  if(!ts) return '';
+  var d = new Date(ts);
+  function p(n){ return n < 10 ? '0' + n : '' + n; }
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate()) + ' ' + p(d.getHours()) + ':' + p(d.getMinutes());
+}
+function devRender(list){
+  var box = $('#devList');
+  if(!box) return;
+  if(!list || !list.length){
+    box.innerHTML = '<div class="ad-empty">还没有可信设备</div>';
+    return;
+  }
+  var html = '';
+  for(var i = 0; i < list.length; i++){
+    var d = list[i];
+    var meta = '加入 ' + fmtTime(d.createdAt);
+    if(d.lastSeenAt) meta += ' · 最近活动 ' + fmtTime(d.lastSeenAt);
+    html += '<div class="ap-dev-row' + (d.isMe ? ' me' : '') + '">' +
+      '<span class="ap-dev-name">' + esc(d.name || '未命名设备') + '</span>' +
+      (d.isMe ? '<span class="ap-dev-tag">本机</span>' : '') +
+      '<span class="ap-dev-meta">' + meta + '</span>' +
+      '<button type="button" class="ap-mini" onclick="devRevoke(\'' + d.id + '\')">移除</button>' +
+      '</div>';
+  }
+  box.innerHTML = html;
+}
+function devRefresh(){
+  var box = $('#devList');
+  if(box) box.innerHTML = '<div class="ad-empty">加载中…</div>';
+  cbApi('/api/device/list').then(function(d){
+    if(!d || !d.ok){
+      if(box) box.innerHTML = '<div class="ad-empty">' + ((d && d.error) || '读取失败') + '</div>';
+      return;
+    }
+    devRender(d.devices || []);
+  }).catch(function(){
+    if(box) box.innerHTML = '<div class="ad-empty">无法连接服务器</div>';
+  });
+}
+function devRevoke(id){
+  if(!id) return;
+  if(!confirm('确定移除这台设备吗？移除后它打开本站需要重新输入管理员密码。')) return;
+  cbApi('/api/device/revoke', { id: id }).then(function(d){
+    if(d && d.ok){
+      devRefresh();
+    }else{
+      alert((d && d.error) || '移除失败');
+    }
+  }).catch(function(){ alert('无法连接服务器'); });
+}
+
+/* 发码面板弹层开关 */
+function apOpen(){
+  var m = $('#apModal');
+  if(!m) return;
+  m.classList.add('on');
   var p = $('#adminPanel');
-  if(!p) return;
-  var on = p.classList.toggle('on');
-  if(on && !adminState.codes.length && adminState.pwd) adminRefresh();
+  if(p) p.classList.add('on');
+  /* 已登录管理员不必再输密码 */
+  var row = $('#apPwdRow');
+  var logged = !!(adminState.pwd || (typeof CB !== 'undefined' && CB.isAdmin));
+  if(row) row.classList.toggle('hidden', logged);
+  if(!adminState.codes.length && adminState.pwd) adminRefresh();
+  devRefresh();
+}
+function apClose(){
+  var m = $('#apModal');
+  if(m) m.classList.remove('on');
+}
+function apToggle(){
+  var m = $('#apModal');
+  if(m && m.classList.contains('on')) apClose(); else apOpen();
 }
 /* 管理员登录并拉取码列表 */
 function adminLogin(){
@@ -5626,14 +5821,15 @@ function adminLogin(){
   adminRefresh();
 }
 
-/* 密码校验通过后的后续动作：把本机登记为可信设备 */
+/* 密码校验通过后的后续动作：把本机登记为可信设备
+   （若本机已经是管理员且已登记，则不重复注册） */
 function adminRefreshTail(){
   if(adminState._devDone) return;
+  if(CB && CB.isAdmin) return;
   adminState._devDone = true;
   if(typeof cbOnAdminLogin === 'function'){
     cbOnAdminLogin(adminState.pwd, guessDeviceName());
   }
-  adminState._devDone = false;
 }
 
 function guessDeviceName(){
@@ -5774,16 +5970,122 @@ function guestSampleSets(){
 
 /* ---------- 角色落地：界面差异 ---------- */
 function applyRoleUI(){
-  /* 访客入口固定为预览身份：显示顶部提示，并隐藏所有管理类入口 */
+  var guest = isGuest();
   var gb = $('#guestBar');
-  if(gb) gb.classList.add('on');
+  /* 访客：显示顶部提示，隐藏所有管理类入口；管理员：全部可用 */
+  if(gb) gb.classList.toggle('on', guest);
   var tag = $('#gbTag');
   if(tag) tag.textContent = '预览模式 · 改动不保存';
+  var pvG = $('#pvTag'), pvA = $('#pvTagAdmin');
+  if(pvG) pvG.style.display = guest ? '' : 'none';
+  if(pvA) pvA.style.display = guest ? 'none' : '';
   var ids = ['btnAdmin', 'btnExport', 'btnImport', 'syncPill'];
   for(var k = 0; k < ids.length; k++){
     var el = document.getElementById(ids[k]);
-    if(el) el.style.display = 'none';
+    if(!el) continue;
+    if(ids[k] === 'btnAdmin'){
+      var fab = $('#btnAdmin');
+      if(fab) fab.classList.toggle('on', !guest);   /* 悬浮发码按钮 */
+    }else{
+      el.style.display = guest ? 'none' : '';
+    }
   }
+  if(guest) apClose();
+}
+
+/* ---------- 入口双 Tab 切换 ---------- */
+function gateTab(which){
+  var admin = which === 'admin';
+  var tg = $('#tabGuest'), ta = $('#tabAdmin');
+  if(tg) tg.classList.toggle('on', !admin);
+  if(ta) ta.classList.toggle('on', admin);
+  var pg = $('#paneGuest'), pa = $('#paneAdmin');
+  if(pg) pg.style.display = admin ? 'none' : '';
+  if(pa) pa.style.display = admin ? '' : 'none';
+  var errA = $('#gateAdminErr');
+  if(admin && errA) errA.textContent = '';
+  var focusEl = admin ? $('#gateAdminPwd') : $('#gateInput');
+  if(focusEl) setTimeout(function(){ try{ focusEl.focus(); }catch(e){} }, 120);
+}
+
+/* 管理员面板的小眼睛切换（结构与 togglePwd 一致，作用不同元素） */
+function toggleGatePwd(){
+  var inp = $('#gateAdminPwd');
+  var wrap = inp ? inp.parentNode : null;
+  if(!inp || !wrap) return;
+  var show = !wrap.classList.contains('show');
+  wrap.classList.toggle('show', show);
+  var d = $('#gEyePath'), c = $('#gEyeCircle'), s = $('#gEyeSlash');
+  if(d) d.setAttribute('d', show ? EYE_SHUT_D : EYE_OPEN_D);
+  if(c) c.setAttribute('r', show ? 0 : EYE_OPEN_C);
+  if(s) s.style.display = show ? '' : 'none';
+  var eye = $('#gateAdminEye');
+  if(eye){
+    eye.setAttribute('aria-label', show ? '隐藏密码' : '显示密码');
+    eye.setAttribute('title', show ? '点击隐藏密码' : '点击显示密码');
+  }
+  try{ inp.focus(); if(show) inp.select(); }catch(e){}
+}
+function gateAdminErr(msg, soft){
+  var el = $('#gateAdminErr');
+  if(!el) return;
+  el.textContent = msg || '';
+  el.style.color = soft ? '#7183a0' : '#d0342c';
+}
+
+/* 管理员从「管理员」Tab 登录：校验密码 → 可选登记设备 → 进入工作台 */
+function gateAdminLogin(){
+  var inp = $('#gateAdminPwd');
+  var btn = $('#gateAdminSubmit');
+  var remember = $('#rememberDevice');
+  var rememberOk = remember ? remember.checked : true;
+  var val = inp ? String(inp.value || '').trim() : '';
+  if(!val){ gateAdminErr('请输入管理员密码'); gateShake(); return; }
+  gateAdminErr('正在验证…', true);
+  if(btn) btn.disabled = true;
+
+  var done = function(remembered){
+    if(btn) btn.disabled = false;
+    adminState.pwd = val;
+    SESSION.role = 'admin';
+    SESSION.code = 'admin';
+    gateAdminErr('');
+    CB.isAdmin = true;
+    if(remembered){
+      /* 长期设备：登录即把本地数据推上云，完成旧数据迁移 */
+      if(typeof cbMarkDirty === 'function') cbMarkDirty();
+    }
+    enterWorkbench();
+  };
+
+  /* 第一步：用 /api/list 校验密码（复用已有接口） */
+  api('/api/list', null, val).then(function(d){
+    if(!d || !d.ok){
+      if(btn) btn.disabled = false;
+      gateAdminErr((d && d.error) || '管理员密码错误');
+      gateShake();
+      if(inp){ inp.value = ''; inp.focus(); }
+      return;
+    }
+    adminState.codes = d.codes || [];
+    adminState.ok = true;
+
+    if(!rememberOk){
+      /* 不记住这台设备：token 只在内存，本次会话有效 */
+      cbLoginDevice(val, guessDeviceName(), function(){
+        done(false);
+      }, false);
+      return;
+    }
+    /* 记住设备：token 写入 localStorage，长期免验证 */
+    cbLoginDevice(val, guessDeviceName(), function(okDev){
+      if(!okDev) gateAdminErr('设备登记失败，本次仍可进入，下次需重输密码');
+      done(true);
+    }, true);
+  }).catch(function(e){
+    if(btn) btn.disabled = false;
+    gateAdminErr('无法连接验证服务：' + errText(e));
+  });
 }
 
 /* ---------- 门禁界面 ---------- */
@@ -5875,6 +6177,25 @@ function bindGate(){
       if(el && el.textContent) el.textContent = '';
     });
   }
+  /* 管理员密码框：回车直接登录 */
+  var apw = $('#gateAdminPwd');
+  if(apw){
+    apw.addEventListener('keydown', function(e){
+      if(e.key === 'Enter' || e.keyCode === 13){ e.preventDefault(); gateAdminLogin(); }
+    });
+  }
+  /* 默认停在访客 Tab */
+  gateTab('guest');
+  /* 弹层：点遮罩或按 ESC 关闭 */
+  var modal = $('#apModal');
+  if(modal && !modal.__bound){
+    modal.__bound = true;
+    modal.addEventListener('click', function(e){ if(e.target === modal) apClose(); });
+  }
+  document.addEventListener('keydown', function(e){
+    var m = $('#apModal');
+    if(m && m.classList.contains('on') && (e.key === 'Escape' || e.keyCode === 27)) apClose();
+  });
 }
 function boot(){
   bindGate();
