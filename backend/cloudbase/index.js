@@ -15,7 +15,10 @@
 // ---------- 配置 ----------
 const ADMIN_PASSWORD = 'JQP@2026';
 const DB = 'scholarship';          // 数据表名
-const COLL = 'codes';              // 集合名
+const COLL = 'codes';              // 访问码集合
+const DATA_COLL = 'appdata';       // 业务数据集合（多端同步）
+const DEV_COLL = 'devices';        // 可信设备集合（管理员免验证）
+const DOC_ID = 'main';             // 业务数据单文档 id
 const MAX_CODES = 500;             // 最多保留多少条历史码
 
 // ---------- CloudBase 初始化 ----------
@@ -67,7 +70,7 @@ function ok(data, status) {
     headers: {
       'content-type': 'application/json; charset=utf-8',
       'access-control-allow-origin': '*',
-      'access-control-allow-headers': 'Content-Type, X-Admin-Password',
+      'access-control-allow-headers': 'Content-Type, X-Admin-Password, X-Device-Token',
       'access-control-allow-methods': 'GET, POST, OPTIONS'
     },
     body: JSON.stringify(data)
@@ -252,6 +255,142 @@ async function handleRevoke(event) {
   return ok({ ok: true, code: code });
 }
 
+// ============================================================
+//  可信设备：输入一次管理员密码后，该设备长期免验证
+// ============================================================
+
+function randHex(n) {
+  let s = '';
+  const chars = 'abcdef0123456789';
+  for (let i = 0; i < (n || 32); i++) s += chars[Math.floor(Math.random() * 16)];
+  return s;
+}
+
+function hash(s) {
+  // 简易哈希：只用于避免明文存 token，不用于密码强度
+  let h1 = 0x811c9dc5, h2 = 0x01000193;
+  for (let i = 0; i < s.length; i++) {
+    const c = s.charCodeAt(i);
+    h1 = ((h1 ^ c) * 16777619) >>> 0;
+    h2 = ((h2 + c) * 2654435761) >>> 0;
+  }
+  return (h1.toString(16) + h2.toString(16));
+}
+
+// 设备首次注册：用管理员密码换长期 token（支持多台设备并存）
+async function handleDeviceLogin(event) {
+  if (!adminOk(event)) return fail('管理员密码错误');
+  const body = parseBody(event);
+  const name = String(body.name || '').trim().slice(0, 30) || '我的设备';
+
+  const token = randHex(48);
+  const t = now();
+
+  await getDb().collection(DEV_COLL).add({
+    name: name,
+    tokenHash: hash(token),
+    ua: String(header(event, 'User-Agent') || '').slice(0, 140),
+    createdAt: t,
+    lastSeenAt: t
+  });
+
+  return ok({ ok: true, token: token, name: name, createdAt: t });
+}
+
+// 校验设备 token
+async function checkDevice(event) {
+  const tok = header(event, 'X-Device-Token');
+  if (!tok) return null;
+  const res = await getDb().collection(DEV_COLL).limit(50).get();
+  const list = (res && res.data) || [];
+  const h = hash(tok);
+  const hit = list.find(d => d.tokenHash === h);
+  if (!hit) return null;
+  try {
+    await getDb().collection(DEV_COLL).doc(hit._id).update({ lastSeenAt: now() });
+  } catch (e) {}
+  return hit;
+}
+
+// 身份校验：管理员密码 或 可信设备 token
+async function auth(event) {
+  if (adminOk(event)) return { role: 'admin', via: 'password' };
+  const d = await checkDevice(event);
+  if (d) return { role: 'admin', via: 'device', device: d };
+  return null;
+}
+
+// 设备列表 + 移除
+async function handleDeviceList(event) {
+  if (!adminOk(event)) return fail('管理员密码错误');
+  const res = await getDb().collection(DEV_COLL).limit(50).get();
+  const list = (res && res.data) || [];
+  const t = now();
+  return ok({
+    ok: true,
+    devices: list.map(d => ({
+      id: d._id,
+      name: d.name,
+      createdAt: d.createdAt || 0,
+      lastSeenAt: d.lastSeenAt || 0,
+      ua: d.ua || ''
+    })).sort((a, b) => (b.lastSeenAt || 0) - (a.lastSeenAt || 0))
+  });
+}
+
+// 移除某个设备（需管理员密码，防止 token 泄露后无法反制）
+async function handleDeviceRevoke(event) {
+  if (!adminOk(event)) return fail('管理员密码错误');
+  const body = parseBody(event);
+  const id = String(body.id || '').trim();
+  if (!id) return fail('缺少设备 id');
+  try {
+    await getDb().collection(DEV_COLL).doc(id).remove();
+  } catch (e) {
+    return fail('移除失败：' + (e && e.message ? e.message : e));
+  }
+  return ok({ ok: true, id: id });
+}
+
+// ============================================================
+//  业务数据：多端同步（单文档，后写覆盖）
+// ============================================================
+
+// 拉取
+async function handleDataGet(event) {
+  const a = await auth(event);
+  if (!a) return fail('未授权：请输入管理员密码', 401);
+  const res = await getDb().collection(DATA_COLL).doc(DOC_ID).get();
+  const d = (res && res.data && res.data[0]) || null;
+  return ok({
+    ok: true,
+    payload: d && d.payload ? d.payload : null,
+    updatedAt: d ? (d.updatedAt || 0) : 0,
+    via: a.via
+  });
+}
+
+// 保存（后写覆盖）
+async function handleDataPut(event) {
+  const a = await auth(event);
+  if (!a) return fail('未授权：请输入管理员密码', 401);
+  const body = parseBody(event);
+  const payload = body.payload;
+  if (!payload || typeof payload !== 'object') return fail('数据格式错误');
+  if (JSON.stringify(payload).length > 3 * 1024 * 1024) return fail('数据过大');
+
+  const t = now();
+  const res = await getDb().collection(DATA_COLL).doc(DOC_ID).get();
+  const old = (res && res.data && res.data[0]) || null;
+
+  if (old) {
+    await getDb().collection(DATA_COLL).doc(old._id).update({ payload: payload, updatedAt: t });
+  } else {
+    await getDb().collection(DATA_COLL).add({ _id: DOC_ID, payload: payload, updatedAt: t });
+  }
+  return ok({ ok: true, updatedAt: t });
+}
+
 // ---------- 入口 ----------
 exports.main = async (event) => {
   const path = pathOf(event);
@@ -260,6 +399,17 @@ exports.main = async (event) => {
     if (path === '/api/code') return await handleCreate(event);
     if (path === '/api/list') return await handleList(event);
     if (path === '/api/revoke') return await handleRevoke(event);
+    // 设备免验证
+    if (path === '/api/device/login') return await handleDeviceLogin(event);
+    if (path === '/api/device/list') return await handleDeviceList(event);
+    if (path === '/api/device/revoke') return await handleDeviceRevoke(event);
+    if (path === '/api/device/check') {
+      const d = await checkDevice(event);
+      return d ? ok({ ok: true, name: d.name }) : fail('设备未授权', 401);
+    }
+    // 业务数据同步
+    if (path === '/api/data/get') return await handleDataGet(event);
+    if (path === '/api/data/put') return await handleDataPut(event);
     return fail('接口不存在：' + path, 404);
   } catch (e) {
     console.error('ERR', path, e && e.message ? e.message : e);
