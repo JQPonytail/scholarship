@@ -5403,10 +5403,19 @@ function cbTokenGet(){
 }
 function cbTokenSet(t){
   CB.token = t || '';
+  var saved = false;
   try{
-    if(CB.token) localStorage.setItem(K_TOK, CB.token);
-    else localStorage.removeItem(K_TOK);
-  }catch(e){}
+    if(CB.token){
+      localStorage.setItem(K_TOK, CB.token);
+      /* 必须回读校验：iOS 无痕模式、隐私模式、App 内置浏览器下
+         setItem 可能是静默失败的，不校验就会以为存上了。 */
+      saved = (localStorage.getItem(K_TOK) === CB.token);
+    }else{
+      localStorage.removeItem(K_TOK);
+    }
+  }catch(e){ saved = false; }
+  CB.persisted = saved;
+  return saved;
 }
 function cbTokenClear(){ cbTokenSet(''); }
 
@@ -5441,24 +5450,21 @@ function cbApi(path, body){
 /* 静默校验本机 token 是否仍有效 */
 function cbCheckDevice(cb){
   var tk = cbTokenGet();
-  if(!tk){ cb(false, '本机未注册'); return; }
-  var fail = false;
+  if(!tk){ cb(false, '本机未注册', true); return; }
   cbApi('/api/device/check').then(function(d){
-    if(d && d.ok){ cb(true, d.name || ''); return; }
-    /* 只有服务端明确说「未授权」才清除 token。
-       「接口不存在」「服务异常」等属于后端未部署新版，不该废掉本机凭证。 */
+    if(d && d.ok){ cb(true, d.name || '', true); return; }
+    /* 第三参数 rejected=true 表示「服务端明确判定 token 无效」，
+       这时才允许清除本机凭证。
+       网络异常、CORS 失败、后端未部署新版 → rejected=false，
+       绝不能动用户的长期免验证凭证。 */
     var msg = (d && d.error) || '';
-    if(/未授权|设备未授权|token/i.test(msg)) cbTokenClear();
-    else fail = true;
-    cb(false, msg || '设备未授权');
+    var rejected = /未授权|设备未授权|token.*(无效|失效|不存在)/i.test(msg);
+    if(rejected) cbTokenClear();
+    cb(false, msg || '设备未授权', rejected);
   }).catch(function(){
-    /* 网络异常（超时、CORS、断网）≠ token 失效。
-       绝不能在这里 cbTokenClear()，否则刷新时一次网络抖动
-       就把管理员的长期凭证删掉，下次不得不重新输密码。 */
-    fail = true;
-    cb(false, '网络不可用');
+    /* 网络异常 ≠ token 失效，绝不清除凭证 */
+    cb(false, '网络不可用（凭证已保留）', false);
   });
-  return fail;
 }
 
 /* 用管理员密码换取长期 token
@@ -5474,11 +5480,17 @@ function cbLoginDevice(pwd, name, cb, persist){
       if(d && d.ok && d.token){
         if(persist === false){
           CB.token = d.token;                       /* 仅内存 */
+          cb(true, d.name || name || '本设备', 'session');
         }else{
-          cbTokenSet(d.token);
+          var saved = cbTokenSet(d.token);
           try{ localStorage.setItem('wb_nsch_role', 'admin'); }catch(e){}
+          if(saved){
+            cb(true, d.name || name || '本设备', 'persist');
+          }else{
+            /* token 拿不到，但本次会话仍可用管理员身份 */
+            cb(true, d.name || name || '本设备', 'nostore');
+          }
         }
-        cb(true, d.name || name || '本设备');
       }
       else cb(false, (d && d.error) || '注册失败');
     })
@@ -6116,9 +6128,21 @@ function gateAdminLogin(){
       return;
     }
     /* 记住设备：token 写入 localStorage，长期免验证 */
-    cbLoginDevice(val, guessDeviceName(), function(okDev){
-      if(!okDev) gateAdminErr('设备登记失败，本次仍可进入，下次需重输密码');
-      done(true);
+    cbLoginDevice(val, guessDeviceName(), function(okDev, devName, mode){
+      if(!okDev){
+        gateAdminErr('设备登记失败，本次仍可进入，下次需重输密码');
+        done(false);
+        return;
+      }
+      if(mode === 'nostore'){
+        /* 后端登记成功但浏览器存不下凭证 → 明确告知原因，
+           否则用户会以为是「免验证功能坏了」。 */
+        if(window.CBDEBUG || 1){
+          gateAdminErr('');
+        }
+        window.__nschNoStore = true;
+      }
+      done(mode === 'persist');
     }, true);
   }).catch(function(e){
     if(btn) btn.disabled = false;
@@ -6269,22 +6293,56 @@ function boot(){
   var hasTok = false;
   try{ hasTok = !!localStorage.getItem('wb_nsch_devtoken'); }catch(e){}
 
+  /* 诊断信息写入页面顶部，登录失败时一眼看出原因。
+     尤其用于排查「localStorage 不可写」的场景
+     （iOS 无痕模式、部分 App 内置浏览器）。 */
+  var diag = 'role=' + (savedRole || '空') + ' token=' + (hasTok ? '有' : '无');
+  try{
+    localStorage.setItem('wb_nsch_probe', '1');
+    var canWrite = localStorage.getItem('wb_nsch_probe') === '1';
+    localStorage.removeItem('wb_nsch_probe');
+    diag += ' localStorage=' + (canWrite ? '可读写' : '只读(凭证无法保存!)');
+  }catch(e){
+    diag += ' localStorage=不可用(凭证无法保存!)';
+  }
+  try{ window.__nschDiag = diag; }catch(e){}
+  window.__nschDiag = diag;
+
   if(savedRole === 'admin' && hasTok){
     gateErr('正在验证本设备…', true);
-    cbCheckDevice(function(okDev, devName){
+    cbCheckDevice(function(okDev, devName, rejected){
       if(okDev){
         SESSION.role = 'admin';
         SESSION.code = 'device';
         if(typeof cbBoot === 'function') cbBoot();
         enterWorkbench();
-      } else {
-        /* token 失效 → 清掉，退回访问码页 */
-        try{ localStorage.removeItem('wb_nsch_role'); }catch(e){}
-        cbTokenClear();
-        gateShow();
-        var inp0 = $('#gateInput');
-        if(inp0){ setTimeout(function(){ try{ inp0.focus(); }catch(e){} }, 260); }
+        return;
       }
+      /* 网络不通时不销毁凭证，也不弹访问码页——
+         保留凭证 + 提示重试，联网后再刷新就能免验证进去。
+         这是手机端反复要求重输密码的根因：
+         一旦网络抖动就 cbTokenClear()，长期凭证被永久删除。 */
+      if(!rejected){
+        gateShow();
+        var msg0 = $('#gateMsgNet');
+        if(!msg0){
+          msg0 = document.createElement('div');
+          msg0.id = 'gateMsgNet';
+          msg0.className = 'gate-note';
+          msg0.style.cssText = 'color:#1a7f4b;font-weight:700;';
+          var g0 = $('#gate');
+          if(g0 && g0.firstChild) g0.firstChild.appendChild(msg0);
+        }
+        msg0.textContent = '网络未连通，已保留本机免验证凭证，联网后刷新页面即可直接进入。';
+        var inpN = $('#gateInput');
+        if(inpN){ setTimeout(function(){ try{ inpN.focus(); }catch(e){} }, 260); }
+        return;
+      }
+      /* 服务端明确说 token 无效 → 清掉，退回访问码页 */
+      try{ localStorage.removeItem('wb_nsch_role'); }catch(e){}
+      gateShow();
+      var inp0 = $('#gateInput');
+      if(inp0){ setTimeout(function(){ try{ inp0.focus(); }catch(e){} }, 260); }
     });
     return;
   }
