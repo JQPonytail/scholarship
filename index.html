@@ -544,6 +544,69 @@ footer.ft{text-align:center;padding:22px 16px;color:var(--ink-3);font-size:12px;
 .gate-btn:active{transform:translateY(1px) scale(.995)}
 .gate-note{font-size:11.5px;color:#93a1b8;margin-top:16px;line-height:1.6}
 .gate.shake .gate-card{animation:gateShake .4s}
+/* ---- 管理员发码面板 ---- */
+.gate-admin-toggle{
+  display:block;width:100%;margin-top:18px;padding:11px;
+  background:transparent;border:1px dashed #c3cede;border-radius:10px;
+  font-size:12.5px;font-weight:700;color:#8494ab;cursor:pointer;font-family:inherit;
+  min-height:44px;transition:all .18s;
+}
+.gate-admin-toggle:hover{border-color:var(--primary,#c8102e);color:var(--primary,#c8102e);background:#fff7f8}
+.admin-panel{display:none;text-align:left;margin-top:14px;padding:16px;background:#f7f9fc;border:1px solid #e4e9f2;border-radius:12px}
+.admin-panel.on{display:block}
+.ap-title{font-size:13.5px;font-weight:800;color:#16233c;margin-bottom:14px}
+.ap-field{margin-bottom:12px}
+.ap-field label{display:block;font-size:12px;font-weight:700;color:#3b4c68;margin-bottom:6px}
+.ap-field input,.ap-field select{
+  width:100%;padding:11px 12px;font-size:16px;font-family:inherit;
+  border:1px solid #d5dce8;border-radius:9px;background:#fff;color:#16233c;
+}
+.ap-field input:focus,.ap-field select:focus{outline:none;border-color:var(--primary,#c8102e)}
+.ap-btn{
+  width:100%;margin-top:8px;padding:12px;min-height:44px;
+  background:#fff;border:1px solid #d5dce8;border-radius:9px;
+  font-size:14px;font-weight:700;color:#3b4c68;cursor:pointer;font-family:inherit;transition:all .18s;
+}
+.ap-btn:hover{border-color:var(--primary,#c8102e);color:var(--primary,#c8102e)}
+.ap-btn:disabled{opacity:.5;cursor:not-allowed}
+.ap-primary{background:var(--primary,#c8102e);border-color:var(--primary,#c8102e);color:#fff}
+.ap-primary:hover{background:#a01023;border-color:#a01023;color:#fff}
+.ap-msg{font-size:12px;color:#d0342c;min-height:16px;font-weight:600;margin-bottom:6px}
+.ap-last{
+  font-size:12.5px;color:#3b4c68;background:#fff;border:1px solid #cfe0d2;
+  border-radius:9px;padding:11px;margin-bottom:10px;line-height:1.7;
+}
+.ap-last b{font-size:17px;color:#1a7f4b;letter-spacing:1.5px;font-family:ui-monospace,Menlo,monospace}
+.ap-tip{font-size:11.5px;color:#93a1b8;margin-bottom:10px;position:relative;display:inline-block}
+.copy-tip{
+  display:none;margin-left:8px;background:#1a7f4b;color:#fff;
+  padding:2px 8px;border-radius:6px;font-size:11px;font-weight:700;
+}
+.ap-list{max-height:230px;overflow-y:auto;-webkit-overflow-scrolling:touch}
+.ad-empty{font-size:12px;color:#a6b3c6;text-align:center;padding:16px 0}
+.ad-row{
+  display:flex;align-items:center;gap:7px;flex-wrap:wrap;
+  padding:10px;background:#fff;border:1px solid #e4e9f2;border-radius:9px;margin-bottom:7px;
+}
+.ad-info{flex:1;min-width:110px}
+.ad-info b{display:block;font-size:15px;color:#16233c;letter-spacing:1px;font-family:ui-monospace,Menlo,monospace}
+.ad-note{display:block;font-size:11px;color:#8494ab;margin-top:2px}
+.ad-exp{display:block;font-size:10.5px;color:#a6b3c6;margin-top:2px}
+.ad-st{font-size:10.5px;font-weight:700;padding:3px 7px;border-radius:6px;flex:none}
+.ad-st.live{background:#e6f7ed;color:#1a7f4b}
+.ad-st.used{background:#f0f2f5;color:#98a4b8}
+.ad-st.exp{background:#fff1e6;color:#c25e00}
+.ad-btn{
+  padding:7px 10px;min-height:34px;font-size:11.5px;font-weight:700;
+  background:#fff;border:1px solid #d5dce8;border-radius:7px;
+  color:#3b4c68;cursor:pointer;font-family:inherit;flex:none;
+}
+.ad-del{border-color:#f0c8c4;color:#d0342c}
+.ad-del:hover{background:#fff5f4}
+@media(max-width:480px){
+  .ad-row{gap:5px}
+  .ad-btn{padding:7px 8px;min-height:38px}
+}
 @keyframes gateShake{
   0%,100%{transform:translateX(0)}
   20%{transform:translateX(-9px)}
@@ -611,8 +674,38 @@ body.locked > .mask{display:none !important}
     <div id="gateErr" class="gate-err"></div>
     <button class="gate-btn" id="gateSubmit">进入预览</button>
     <div class="gate-note">
-      访问码由分享者生成，24 小时内有效，且本页面不会记住登录状态。<br>
+      访问码由分享者生成，一次性使用，用完即失效。<br>
       关闭后重新打开需要重新输入。
+    </div>
+    <button class="gate-admin-toggle" id="gateAdminToggle" onclick="adminToggle()">
+      我是管理员 · 生成访问码
+    </button>
+
+    <!-- 管理员发码面板 -->
+    <div class="admin-panel" id="adminPanel">
+      <div class="ap-title">管理员发码面板</div>
+      <div class="ap-field">
+        <label for="adminPwd">管理员密码</label>
+        <input type="password" id="adminPwd" placeholder="输入管理员密码" autocomplete="off">
+        <button class="ap-btn" onclick="adminLogin()">验证并加载</button>
+      </div>
+      <div class="ap-msg" id="adminMsg"></div>
+      <div class="ap-field">
+        <label for="adminNote">备注（便于自己识别，例：给朋友A）</label>
+        <input type="text" id="adminNote" placeholder="备注" maxlength="50">
+      </div>
+      <div class="ap-field">
+        <label for="adminHours">有效期</label>
+        <select id="adminHours">
+          <option value="24">24 小时</option>
+          <option value="168" selected>7 天</option>
+          <option value="720">30 天</option>
+        </select>
+        <button class="ap-btn ap-primary" id="adminGenBtn" onclick="adminGen()">生成访问码</button>
+      </div>
+      <div class="ap-last" id="adminLast" style="display:none"></div>
+      <div class="ap-tip">点击「复制」即复制到剪贴板<span class="copy-tip" id="copyTip">已复制</span></div>
+      <div class="ap-list" id="adminList"></div>
     </div>
   </div>
 </div>
@@ -5100,48 +5193,155 @@ var SESSION = { role: '', code: '' };
 function isGuest(){ return SESSION.role === 'guest'; }
 function isAdmin(){ return false; }     /* 访客入口不存在管理员身份 */
 
-/* ---------- 验证码层：读取仓库内的 codes.json 文件 ----------
-   管理员维护 codes.json（加码 / 删码 / 标记已用 / 设过期时间），
-   本页每次校验时拉取最新文件，实现「网址中性 + 码可控制」的联动。 */
+/* ---------- 验证码层：实时后端校验 ----------
+   后端地址在 API_BASE，部署到 Cloudflare Workers 后改这一行即可。
+   流程：管理员在「发码面板」点生成 → 码存后端 KV → 访客输入 → 后端校验并标记已用。
+   一次性：后端校验通过即置 used，多设备不可重复使用。 */
+var API_BASE = 'https://scholarship-code.jqp-gongjiang.workers.dev';
+
 function errText(e){
   try{ return String((e && (e.message || e.msg)) || e || '未知错误'); }catch(x){ return '未知错误'; }
 }
-/* 读取 codes.json（加时间戳避免浏览器缓存，改码后立即生效） */
-function loadCodes(cb){
-  try{
-    fetch('codes.json?t=' + Date.now())
-      .then(function(r){ if(!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-      .then(function(d){ cb(Array.isArray(d) ? d : ((d && d.codes) || []), null); })
-      .catch(function(e){ cb(null, '读取访问码失败：' + errText(e)); });
-  }catch(e){ cb(null, '读取访问码失败：' + errText(e)); }
-}
-/* 访客本次会话内已用过的码（sessionStorage：会话级，关闭标签页即清，不写持久数据） */
-function guestUsedMark(code){
-  try{ sessionStorage.setItem('wb_nsch_gu_' + code, '1'); }catch(e){}
-}
-function guestUsedCheck(code){
-  try{ return sessionStorage.getItem('wb_nsch_gu_' + code) === '1'; }catch(e){ return false; }
-}
-/* 访客验证：命中「未使用且未过期」的码即通过。
-   一次性策略：
-   —— 同一设备：sessionStorage 记「本机已用」，同设备不重复；
-   —— 跨设备：管理员在 codes.json 里把 used 改成 true（或删掉该条）即永久作废。
-      访客端零写入（静态托管没有写接口）。 */
-function verifyGuestCode(input, cb){
-  if(guestUsedCheck(input)){ cb(false, '该访问码本机已使用过，请向分享者索取新的访问码'); return; }
-  loadCodes(function(codes, err){
-    if(!codes){ cb(false, err || '读取访问码失败，请稍后重试'); return; }
-    var hit = null, i;
-    for(i = 0; i < codes.length; i++){
-      if(String(codes[i].code) === String(input)){ hit = codes[i]; break; }
-    }
-    if(!hit){ cb(false, '访问码不存在，请核对后重新输入'); return; }
-    if(hit.used){ cb(false, '该访问码已被使用过，已失效'); return; }
-    if(Date.now() > (Number(hit.expires) || 0)){ cb(false, '该访问码已超过有效期'); return; }
-    guestUsedMark(input);
-    cb(true, '');
+/* 统一的接口调用 */
+function api(path, body, adminPwd){
+  var opt = { method: body ? 'POST' : 'GET', headers: {} };
+  if(body){
+    opt.headers['Content-Type'] = 'application/json';
+    opt.body = JSON.stringify(body);
+  }
+  if(adminPwd) opt.headers['X-Admin-Password'] = adminPwd;
+  return fetch(API_BASE + path, opt).then(function(r){
+    return r.json().catch(function(){ return { ok:false, error:'服务返回异常（HTTP ' + r.status + '）' }; });
   });
 }
+/* 校验访问码 */
+function verifyGuestCode(input, cb){
+  if(!API_BASE || API_BASE.indexOf('YOUR-SUBDOMAIN') > -1){
+    cb(false, '后端尚未配置：请先把页面顶部脚本中的 API_BASE 改成你的后端地址'); return;
+  }
+  api('/api/verify', { code: input })
+    .then(function(d){
+      if(d && d.ok) cb(true, '');
+      else cb(false, (d && d.error) || '验证失败，请稍后重试');
+    })
+    .catch(function(e){ cb(false, '无法连接验证服务：' + errText(e)); });
+}
+
+/* ---------- 管理员发码面板 ---------- */
+var adminState = { pwd: '', codes: [] };
+function adminToggle(){
+  var p = $('#adminPanel');
+  if(!p) return;
+  var on = p.classList.toggle('on');
+  if(on && !adminState.codes.length && adminState.pwd) adminRefresh();
+}
+/* 管理员登录并拉取码列表 */
+function adminLogin(){
+  var pw = $('#adminPwd');
+  var val = (pw && pw.value || '').trim();
+  if(!val){ $('#adminMsg').textContent = '请输入管理员密码'; return; }
+  $('#adminMsg').textContent = '正在验证…';
+  adminState.pwd = val;
+  adminRefresh();
+}
+function adminRefresh(){
+  $('#adminMsg').textContent = '正在加载…';
+  api('/api/list', null, adminState.pwd).then(function(d){
+    if(d && d.ok){
+      adminState.codes = d.codes || [];
+      $('#adminMsg').textContent = '';
+      renderAdminList();
+    }else{
+      adminState.pwd = '';
+      $('#adminMsg').textContent = (d && d.error) || '密码错误';
+    }
+  }).catch(function(e){
+    $('#adminMsg').textContent = '无法连接：' + errText(e);
+  });
+}
+/* 生成新码 */
+function adminGen(){
+  var note = $('#adminNote') ? $('#adminNote').value.trim() : '';
+  var hours = $('#adminHours') ? Number($('#adminHours').value) : 168;
+  $('#adminGenBtn').disabled = true;
+  api('/api/code', { note: note, hours: hours }, adminState.pwd).then(function(d){
+    $('#adminGenBtn').disabled = false;
+    if(d && d.ok){
+      adminState.codes.unshift(d);
+      renderAdminList();
+      $('#adminNote').value = '';
+      var box = $('#adminLast');
+      if(box){
+        box.style.display = 'block';
+        box.innerHTML = '新码<b>' + esc(d.code) + '</b>（' + (d.note || '未备注') + '，' +
+          Math.round(hours) + ' 小时内有效）复制给朋友：';
+        copyText(d.code);
+      }
+    }else{
+      $('#adminMsg').textContent = (d && d.error) || '生成失败';
+    }
+  }).catch(function(e){
+    $('#adminGenBtn').disabled = false;
+    $('#adminMsg').textContent = '无法连接：' + errText(e);
+  });
+}
+/* 作废某码 */
+function adminRevoke(code){
+  api('/api/revoke', { code: code }, adminState.pwd).then(function(d){
+    if(d && d.ok){ adminRefresh(); }
+    else { $('#adminMsg').textContent = (d && d.error) || '作废失败'; }
+  });
+}
+/* 复制文本 */
+function copyText(t){
+  var ta = document.createElement('textarea');
+  ta.value = t;
+  ta.setAttribute('readonly', '');
+  ta.style.position = 'fixed';
+  ta.style.left = '-9999px';
+  document.body.appendChild(ta);
+  ta.select();
+  ta.setSelectionRange(0, t.length);
+  var ok = false;
+  try{ ok = document.execCommand('copy'); }catch(e){}
+  if(!ok && navigator.clipboard){ navigator.clipboard.writeText(t).catch(function(){}); }
+  document.body.removeChild(ta);
+  var tip = $('#copyTip');
+  if(tip){
+    tip.style.display = 'inline-block';
+    setTimeout(function(){ tip.style.display = 'none'; }, 1600);
+  }
+}
+/* 渲染码列表 */
+function renderAdminList(){
+  var box = $('#adminList');
+  if(!box) return;
+  var list = adminState.codes;
+  if(!list.length){ box.innerHTML = '<div class="ad-empty">还没有生成过访问码</div>'; return; }
+  var now = Date.now(), html = '';
+  for(var i = 0; i < list.length; i++){
+    var c = list[i];
+    var st, sc;
+    if(c.used){ st = '已使用'; sc = 'used'; }
+    else if(c.expires && now > Number(c.expires)){ st = '已过期'; sc = 'exp'; }
+    else { st = '可使用'; sc = 'live'; }
+    var exp = '';
+    if(c.expires){
+      var d = new Date(Number(c.expires));
+      exp = d.getFullYear() + '-' + pad2(d.getMonth()+1) + '-' + pad2(d.getDate()) + ' ' + pad2(d.getHours()) + ':' + pad2(d.getMinutes());
+    }
+    html += '<div class="ad-row">' +
+      '<div class="ad-info"><b>' + esc(c.code) + '</b>' +
+      '<span class="ad-note">' + esc(c.note || '') + '</span>' +
+      '<span class="ad-exp">' + (c.used ? '' : '有效期至 ' + exp) + '</span></div>' +
+      '<span class="ad-st ' + sc + '">' + st + '</span>' +
+      '<button class="ad-btn" onclick="copyText(\'' + c.code + '\')">复制</button>' +
+      (c.used ? '' : '<button class="ad-btn ad-del" onclick="adminRevoke(\'' + c.code + '\')">作废</button>') +
+      '</div>';
+  }
+  box.innerHTML = html;
+}
+function pad2(n){ return n < 10 ? '0' + n : '' + n; }
 
 /* ---------- 访客沙盒：纯内存的虚构示例数据 ----------
    访客永远看不到管理员的真实数据；这些示例只存在内存里，刷新即消失。 */
