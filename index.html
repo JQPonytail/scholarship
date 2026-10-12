@@ -5442,10 +5442,23 @@ function cbApi(path, body){
 function cbCheckDevice(cb){
   var tk = cbTokenGet();
   if(!tk){ cb(false, '本机未注册'); return; }
+  var fail = false;
   cbApi('/api/device/check').then(function(d){
-    if(d && d.ok) cb(true, d.name || '');
-    else { cbTokenClear(); cb(false, (d && d.error) || '设备未授权'); }
-  }).catch(function(){ cb(false, '网络不可用'); });
+    if(d && d.ok){ cb(true, d.name || ''); return; }
+    /* 只有服务端明确说「未授权」才清除 token。
+       「接口不存在」「服务异常」等属于后端未部署新版，不该废掉本机凭证。 */
+    var msg = (d && d.error) || '';
+    if(/未授权|设备未授权|token/i.test(msg)) cbTokenClear();
+    else fail = true;
+    cb(false, msg || '设备未授权');
+  }).catch(function(){
+    /* 网络异常（超时、CORS、断网）≠ token 失效。
+       绝不能在这里 cbTokenClear()，否则刷新时一次网络抖动
+       就把管理员的长期凭证删掉，下次不得不重新输密码。 */
+    fail = true;
+    cb(false, '网络不可用');
+  });
+  return fail;
 }
 
 /* 用管理员密码换取长期 token
@@ -5486,15 +5499,28 @@ function cbPull(force){
     }
     CB.ready = true;
     CB.lastTs = d.updatedAt || 0;
-    cbTsSave(d.updatedAt || 0);
     cbStatus('online');
 
     if(d.payload == null) return false;          /* 云端还没数据，不覆盖本地 */
 
-    /* 后写覆盖策略：云端时间戳比本机新才覆盖，
-       否则说明本机更新过，跳过（由 push 负责上传） */
+    /* 后写覆盖策略
+       —— 注意：这里绝对不能先调 cbTsSave()。
+          cbTsSave 会把 lastLocalTs 立刻抬到云端时间戳，
+          紧接着下面的「云端是否比本机新」判断就会因为两边相等而恒为 false，
+          结果是云端数据永远拉不下来。
+       —— 正确做法：先拿旧的 lastLocalTs 比对，用完再更新。 */
+    var cloudTs = d.updatedAt || 0;
+    var prevLocalTs = CB.lastLocalTs || 0;
     var localDirty = cbOutbox().length > 0;
-    if(!force && localDirty && (d.updatedAt || 0) <= CB.lastLocalTs) return false;
+    if(window.CBDEBUG) console.log('[cbPull] force=' + !!force + ' cloudTs=' + cloudTs + ' prevLocalTs=' + prevLocalTs + ' dirty=' + localDirty);
+
+    if(!force){
+      /* 本机有待上传改动：只有云端确实更新（时间戳更大）才覆盖，
+         否则保留本机版本，等 cbPush 把它推上去。 */
+      if(localDirty && cloudTs <= prevLocalTs) return false;
+      /* 本机无待上传改动：只要云端有新时间戳就采纳 */
+      if(!localDirty && cloudTs === prevLocalTs) return false;
+    }
 
     try{ adoptSets(d.payload.sets || d.payload); }catch(e){}
     if(d.payload.cfg){
@@ -5502,7 +5528,10 @@ function cbPull(force){
       try{ localStorage.setItem(K_CFG, JSON.stringify(state.cfg)); }catch(e){}
       if(state.cfg.stage) state.stage = normStage(state.cfg.stage);
     }
-    cbTsSave(d.updatedAt || 0);
+    /* 采纳完成后才更新时间戳 */
+    cbTsSave(cloudTs);
+    cbOutboxClear();
+    CB.dirty = false;
     if(typeof refreshAll === 'function') refreshAll();
     return true;
   }).catch(function(){
@@ -5555,15 +5584,24 @@ function cbStatus(mode){
 /* ---------- 轮询与触发 ---------- */
 function cbStartAuto(){
   if(CB.poller) return;
+  /* 6秒轮询：多端改完不用等太久就能看到。
+     页面隐藏时停轮询省流量，回到前台立刻拉一次。 */
   CB.poller = setInterval(function(){
     if(document.hidden) return;
     cbPull(false);
-  }, 20000);
+  }, 6000);
 
   document.addEventListener('visibilitychange', function(){
     if(!document.hidden) cbPull(false);
   });
   window.addEventListener('online', function(){ cbPull(false); });
+  window.addEventListener('focus', function(){ cbPull(false); });
+  /* 同一台电脑开了多个标签页时，一个标签改了数据，
+     另一个标签靠 storage 事件立刻感知，不用等轮询 */
+  window.addEventListener('storage', function(e){
+    if(!CB.isAdmin) return;
+    if(e.key === K_PUSH) cbPull(false);
+  });
 }
 
 /* 初始化：先验本机 token，再决定角色 */
@@ -6128,13 +6166,37 @@ function enterWorkbench(){
   refreshAll();
   bindGlobal();
   applyRoleUI();
-  /* 访客：只读，不保存不启动同步；管理员：启动多端同步 */
-  if(SESSION.role === 'admin'){
-    if(typeof cbStartAuto === 'function') cbStartAuto();
-    if(typeof cbMarkDirty === 'function') cbMarkDirty();
-  } else if(typeof cbStatus === 'function'){
-    cbStatus('off');
+  /* 访客：只读，不保存不启动同步 */
+  if(SESSION.role !== 'admin'){
+    if(typeof cbStatus === 'function') cbStatus('off');
+    return;
   }
+  /* 管理员：先拉云端，再决定要不要把本机推上去。
+     —— 绝不能一进来就 cbMarkDirty()：那等于「登录即上传」，
+        会把本机可能已经过期的旧数据覆盖掉另一台设备刚录入的新数据。 */
+  if(typeof cbAfterEnter === 'function') cbAfterEnter();
+}
+
+/* 管理员进入工作台后的同步启动：拉取优先 */
+function cbAfterEnter(){
+  if(typeof cbStartAuto === 'function') cbStartAuto();
+  cbPull(true).then(function(ok){
+    /* 拉取失败（云端还没数据 / 网络不通）→ 才把本机数据作为初始版本推上去 */
+    if(!ok) cbPushOnce();
+  });
+}
+/* 无待推送标记时也强制推一次（用于首次建立云端数据） */
+function cbPushOnce(){
+  if(typeof cbApi !== 'function') return;
+  var payload = { sets: state.sets, cfg: state.cfg };
+  cbApi('/api/data/put', { payload: payload }).then(function(d){
+    if(d && d.ok){
+      cbOutboxClear();
+      cbTsSave(d.updatedAt || 0);
+      CB.ready = true;
+      if(typeof cbStatus === 'function') cbStatus('online');
+    }
+  }).catch(function(){});
 }
 
 /* 校验访问码：从云端「访问验证码」表核验（码由分享者在自己的工作台生成） */
