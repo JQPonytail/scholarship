@@ -344,11 +344,12 @@ async function handleDeviceRevoke(event) {
   const body = parseBody(event);
   const id = String(body.id || '').trim();
   if (!id) return fail('缺少设备 id');
-  try {
-    await getDb().collection(DEV_COLL).doc(id).remove();
-  } catch (e) {
-    return fail('移除失败：' + (e && e.message ? e.message : e));
-  }
+
+  const res = await getDb().collection(DEV_COLL).doc(id).get();
+  const rows = (res && res.data) || [];
+  if (!rows.length) return fail('设备不存在或已被移除');
+
+  await getDb().collection(DEV_COLL).doc(id).remove();
   return ok({ ok: true, id: id });
 }
 
