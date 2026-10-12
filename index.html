@@ -5225,31 +5225,58 @@ function isGuest(){ return SESSION.role === 'guest'; }
 function isAdmin(){ return false; }     /* 访客入口不存在管理员身份 */
 
 /* ---------- 验证码层：实时后端校验 ----------
-   后端地址在 API_BASE，部署到 Cloudflare Workers 后改这一行即可。
+   后端地址在下方 API_BASES，部署到自己的服务器后改那里即可。
    流程：管理员在「发码面板」点生成 → 码存后端 KV → 访客输入 → 后端校验并标记已用。
    一次性：后端校验通过即置 used，多设备不可重复使用。 */
-var API_BASE = 'https://scholarship-code.jqp-gongjiang.workers.dev';
 
 function errText(e){
   try{ return String((e && (e.message || e.msg)) || e || '未知错误'); }catch(x){ return '未知错误'; }
 }
-/* 统一的接口调用 */
+/* 统一的接口调用（多地址自动故障转移） */
+/* ---------- 接口地址（可配置多个，自动故障转移）----------
+   留空或填错时页面会用「离线演示模式」，功能仍可试用，只是数据不跨设备保存。
+   想换成自己的后端，改这里即可。 */
+var API_BASES = [
+  'https://scholarship-code.jqp-gongjiang.workers.dev'
+];
+/* 记住上次能用的地址，下次优先用它 */
+var API_BASE = '';
+try{ API_BASE = localStorage.getItem('wb_sch_api') || ''; }catch(e){}
+
+/* 依次尝试各个地址，返回第一个成功的响应 */
 function api(path, body, adminPwd){
-  var opt = { method: body ? 'POST' : 'GET', headers: {} };
-  if(body){
-    opt.headers['Content-Type'] = 'application/json';
-    opt.body = JSON.stringify(body);
+  var list = [];
+  if(API_BASE && API_BASES.indexOf(API_BASE) < 0) list.push(API_BASE);
+  for(var i = 0; i < API_BASES.length; i++){
+    if(API_BASES[i] && API_BASES[i].indexOf('YOUR-') < 0) list.push(API_BASES[i]);
   }
-  if(adminPwd) opt.headers['X-Admin-Password'] = adminPwd;
-  return fetch(API_BASE + path, opt).then(function(r){
-    return r.json().catch(function(){ return { ok:false, error:'服务返回异常（HTTP ' + r.status + '）' }; });
-  });
+  if(!list.length){
+    return Promise.resolve({ ok:false, offline:true, error:'未配置验证服务地址（请在页面顶部 API_BASES 中填写）' });
+  }
+  function tryOne(idx){
+    if(idx >= list.length){
+      return Promise.resolve({ ok:false, error:'无法连接验证服务：' + list.join(' / ') + '都连不上，请检查网络或换用其他浏览器' });
+    }
+    var opt = { method: body ? 'POST' : 'GET', headers: {} };
+    if(body){
+      opt.headers['Content-Type'] = 'application/json';
+      opt.body = JSON.stringify(body);
+    }
+    if(adminPwd) opt.headers['X-Admin-Password'] = adminPwd;
+    return fetch(list[idx] + path, opt).then(function(r){
+      return r.json().catch(function(){ return { ok:false, error:'服务返回异常（HTTP ' + r.status + '）' }; });
+    }).then(function(d){
+      if(d && d.offline) return { ok:false, offline:true, error:d.error };
+      try{ localStorage.setItem('wb_sch_api', list[idx]); }catch(e){}
+      return d;
+    }).catch(function(){
+      return tryOne(idx + 1);
+    });
+  }
+  return tryOne(0);
 }
 /* 校验访问码 */
 function verifyGuestCode(input, cb){
-  if(!API_BASE || API_BASE.indexOf('YOUR-SUBDOMAIN') > -1){
-    cb(false, '后端尚未配置：请先把页面顶部脚本中的 API_BASE 改成你的后端地址'); return;
-  }
   api('/api/verify', { code: input })
     .then(function(d){
       if(d && d.ok) cb(true, '');
@@ -5309,8 +5336,8 @@ function adminRefresh(){
       $('#adminMsg').textContent = '';
       renderAdminList();
     }else{
-      adminState.pwd = '';
-      $('#adminMsg').textContent = (d && d.error) || '密码错误';
+      if(!adminState.pwd || !/密码/.test((d && d.error) || '')) adminState.pwd = '';
+      $('#adminMsg').textContent = (d && d.error) || '验证失败';
     }
   }).catch(function(e){
     $('#adminMsg').textContent = '无法连接：' + errText(e);
