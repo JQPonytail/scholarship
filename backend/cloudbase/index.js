@@ -5,9 +5,19 @@
 //
 //  接口：
 //    POST /api/verify   校验访问码   { code }
-//    POST /api/code    管理员发码   Header: X-Admin-Password   { note, hours }
-//    GET  /api/list    码列表       Header: X-Admin-Password
-//    POST /api/revoke  作废         Header: X-Admin-Password   { code }
+//    POST /api/code    管理员发码   { note, hours }
+//    GET  /api/list    码列表
+//    POST /api/revoke  作废         { code }
+//    POST /api/device/login   登记可信设备（仅认密码）  { name }
+//    GET  /api/device/list    设备列表
+//    POST /api/device/revoke  移除设备  { id }
+//    GET  /api/data/get       拉取业务数据
+//    POST /api/data/put       保存业务数据  { payload }
+//
+//  鉴权：下列两种任一即可通过
+//    1) Header: X-Admin-Password      管理员密码
+//    2) Header: X-Device-Token 或 ?t=  可信设备 token
+//  （例外：/api/device/login 只认密码，防止已登录设备无限续发新 token）
 //
 //  所有接口共用同一个云函数，通过 event.path 区分
 // ============================================================
