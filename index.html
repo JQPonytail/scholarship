@@ -6340,10 +6340,48 @@ function gateNetMsg(txt){
   }
   el.textContent = txt || '';
 }
-/* 递归重试入口：重新执行 boot 的设备校验分支 */
-function gateAdminRetry(){
-  if(!gateNetTimer){ clearTimeout(gateNetTimer); gateNetTimer = null; }
-  boot();
+/* 网络始终不通：停在门禁页，给出原因和手动重试按钮。
+   绝不能自动刷新页面，否则用户永远无法操作。 */
+function gateNetFail(){
+  gateNetRetry = 0;
+  gateShow();
+  gateNetMsg('网络未连通，暂时无法验证本设备免验证。凭证已保留，联网后点下方「重试验证」即可直接进入。');
+  var card = $('.gate-card');
+  if(!card) return;
+  var btn = $('#gateRetryBtn');
+  if(!btn){
+    btn = document.createElement('button');
+    btn.id = 'gateRetryBtn';
+    btn.className = 'gate-btn';
+    btn.style.marginTop = '10px';
+    btn.textContent = '重试验证';
+    btn.onclick = function(){
+      btn.disabled = true;
+      btn.textContent = '正在验证…';
+      gateNetMsg('');
+      cbCheckDevice(function(ok, nm, rej){
+        if(ok){
+          SESSION.role = 'admin';
+          SESSION.code = 'device';
+          if(typeof cbBoot === 'function') cbBoot();
+          enterWorkbench();
+        }else if(rej){
+          try{ localStorage.removeItem('wb_nsch_role'); }catch(e){}
+          cbTokenClear();
+          gateShow();
+          gateNetMsg('本机凭证已失效，请用管理员密码重新登录一次。');
+        }else{
+          btn.disabled = false;
+          btn.textContent = '重试验证';
+          gateNetFail();
+        }
+      });
+    };
+    card.appendChild(btn);
+  }else{
+    btn.disabled = false;
+    btn.textContent = '重试验证';
+  }
 }
 
 /* 启动时先问一次：本机是不是已登记的可信管理员设备。
@@ -6384,35 +6422,38 @@ function gateAdminRetry(){
          这是手机端反复要求重输密码的根因：
          一旦网络抖动就 cbTokenClear()，长期凭证被永久删除。 */
       if(!rejected){
-        /* 网络抖动 / 请求挂起：凭证还在，自动重试，
-           成功就直接进工作台，用户完全无感。 */
-        if(!gateNetRetry || gateNetRetry >= 3){
+        /* 网络不可用 / 请求挂起。
+           绝对不能 location.reload()：
+           会形成死循环（重载 → 同样失败 → 再重载），
+           用户既进不去工作台，也来不及输管理员密码。
+           这里只在当前页面内做有限次重试，失败后就停，
+           并保留凭证 + 给出手动「重试」按钮。 */
+        if(gateNetRetry < 3){
+          gateNetRetry++;
           gateShow();
-          gateNetMsg('网络未连通，正在重试（' + (gateNetRetry || 0) + '/3）。凭证已保留，不会要求重新输入密码。');
-          if(!gateNetTimer){
-            gateNetTimer = setTimeout(function(){ location.reload(); }, 5000);
-          }
+          gateNetMsg('网络未连通，正在重试（' + gateNetRetry + '/3）…凭证已保留，不会要求重新输入密码。');
+          setTimeout(function(){
+            cbCheckDevice(function(ok2, name2, rej2){
+              if(ok2){
+                SESSION.role = 'admin';
+                SESSION.code = 'device';
+                if(typeof cbBoot === 'function') cbBoot();
+                enterWorkbench();
+                return;
+              }
+              if(rej2){
+                /* 服务端明确说凭证无效 → 这才清，允许重新输密码 */
+                try{ localStorage.removeItem('wb_nsch_role'); }catch(e){}
+                cbTokenClear();
+                gateShow();
+                return;
+              }
+              gateNetFail();
+            });
+          }, 1800);
           return;
         }
-        gateNetRetry++;
-        gateShow();
-        gateNetMsg('正在重试本设备免验证（' + gateNetRetry + '/3）…');
-        setTimeout(function(){
-          cbCheckDevice(function(ok2, name2, rej2){
-            if(ok2){
-              SESSION.role = 'admin';
-              SESSION.code = 'device';
-              if(typeof cbBoot === 'function') cbBoot();
-              enterWorkbench();
-            }else if(rej2){
-              try{ localStorage.removeItem('wb_nsch_role'); }catch(e){}
-              gateShow();
-            }else{
-              /* 再试一次 */
-              gateAdminRetry();
-            }
-          });
-        }, 1500);
+        gateNetFail();
         return;
       }
       /* 服务端明确说 token 无效 → 清掉，退回访问码页 */
