@@ -6342,12 +6342,31 @@ function gateNetMsg(txt){
 }
 /* 网络始终不通：停在门禁页，给出原因和手动重试按钮。
    绝不能自动刷新页面，否则用户永远无法操作。 */
-function gateNetFail(){
+function gateNetFail(rejected){
   gateNetRetry = 0;
   gateShow();
+
+  if(rejected){
+    /* 服务端明确说这个 token 无效（设备记录已被移除 / 从未写入成功）。
+       这是「凭证问题」而不是「网络问题」，
+       自动重试多少次都没用，必须换一个新的 token。 */
+    gateNetMsg('本机免验证凭证已失效（可能曾被移除过）。重新登记一次即可，之后长期免验证。');
+    gateEnsureCard();
+    var rb = $('#gateReBtn');
+    if(!rb){
+      rb = document.createElement('button');
+      rb.id = 'gateReBtn';
+      rb.className = 'gate-btn';
+      rb.style.cssText = 'margin-top:10px;background:linear-gradient(135deg,#1a7f4b,#14603a);box-shadow:0 6px 18px rgba(26,127,75,.3)';
+      rb.textContent = '重新登记本机（免验证）';
+      rb.onclick = gateReRegister;
+      gateEnsureCard().appendChild(rb);
+    }
+    return;
+  }
+
   gateNetMsg('网络未连通，暂时无法验证本设备免验证。凭证已保留，联网后点下方「重试验证」即可直接进入。');
-  var card = $('.gate-card');
-  if(!card) return;
+  gateEnsureCard();
   var btn = $('#gateRetryBtn');
   if(!btn){
     btn = document.createElement('button');
@@ -6365,23 +6384,44 @@ function gateNetFail(){
           SESSION.code = 'device';
           if(typeof cbBoot === 'function') cbBoot();
           enterWorkbench();
-        }else if(rej){
-          try{ localStorage.removeItem('wb_nsch_role'); }catch(e){}
-          cbTokenClear();
-          gateShow();
-          gateNetMsg('本机凭证已失效，请用管理员密码重新登录一次。');
-        }else{
-          btn.disabled = false;
-          btn.textContent = '重试验证';
-          gateNetFail();
+          return;
         }
+        btn.disabled = false;
+        btn.textContent = '重试验证';
+        gateNetFail(rej);
       });
     };
-    card.appendChild(btn);
+    gateEnsureCard().appendChild(btn);
   }else{
     btn.disabled = false;
     btn.textContent = '重试验证';
   }
+}
+function gateEnsureCard(){
+  var card = $('.gate-card');
+  return card || document.body;
+}
+/* 重新登记本机：清掉旧凭证 → 弹密码框 → 换发新 token → 直接进工作台 */
+function gateReRegister(){
+  var pw = window.prompt('请输入管理员密码（重新登记本机免验证）');
+  if(!pw) return;
+  var pwd = String(pw).trim();
+  if(!pwd) return;
+  gateNetMsg('正在重新登记…');
+  /* 先作废旧 token，避免服务端残留记录干扰 */
+  cbTokenClear();
+  try{ localStorage.removeItem('wb_nsch_role'); }catch(e){}
+  cbLoginDevice(pwd, guessDeviceName(), function(ok, nm, mode){
+    if(!ok){
+      gateNetMsg('登记失败，请检查管理员密码是否正确，或网络是否正常。');
+      return;
+    }
+    CB.isAdmin = true;
+    SESSION.role = 'admin';
+    SESSION.code = 'admin';
+    gateNetMsg('');
+    enterWorkbench();
+  }, true);
 }
 
 /* 启动时先问一次：本机是不是已登记的可信管理员设备。
@@ -6456,11 +6496,11 @@ function gateNetFail(){
         gateNetFail();
         return;
       }
-      /* 服务端明确说 token 无效 → 清掉，退回访问码页 */
+      /* 服务端明确说 token 无效 → 给一个「重新登记」按钮，
+         而不是把用户丢回访问码页让他重新输密码
+         （重新输密码时若再次失败，会再次回到这里，形成挫败循环）。 */
       try{ localStorage.removeItem('wb_nsch_role'); }catch(e){}
-      gateShow();
-      var inp0 = $('#gateInput');
-      if(inp0){ setTimeout(function(){ try{ inp0.focus(); }catch(e){} }, 260); }
+      gateNetFail(true);
     });
     return;
   }
