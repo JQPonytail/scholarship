@@ -543,6 +543,14 @@ footer.ft{text-align:center;padding:22px 16px;color:var(--ink-3);font-size:12px;
 .gate-btn:hover{box-shadow:0 10px 24px rgba(200,16,46,.38)}
 .gate-btn:active{transform:translateY(1px) scale(.995)}
 .gate-note{font-size:11.5px;color:#93a1b8;margin-top:16px;line-height:1.6}
+.gate-note-dim{margin-top:10px;font-size:11px;color:#a8b3c6}
+/* 绿色主行动按钮：重新登记免验证 */
+.gate-btn-green{
+  background:linear-gradient(135deg,#1a7f4b,#14603a);
+  box-shadow:0 6px 18px rgba(26,127,75,.3);
+  color:#fff;margin-top:14px;
+}
+.gate-btn-green:active{transform:translateY(1px)}
 /* ---- 入口双 Tab：访客 / 管理员 ---- */
 .gate-tabs{
   display:flex;gap:6px;padding:5px;margin-bottom:22px;
@@ -802,6 +810,12 @@ body.locked > .mask{display:none !important}
       <button class="gate-btn" id="gateAdminSubmit" onclick="gateAdminLogin()">进入工作台</button>
       <div class="gate-note">
         勾选后本设备长期免验证；换设备或清除浏览器数据需重新输入。
+      </div>
+      <button class="gate-btn gate-btn-green" id="gateReBtnStatic" onclick="gateReRegister()">
+        重新登记本机（免验证）
+      </button>
+      <div class="gate-note gate-note-dim">
+        已在本机登录过、但打开网站仍要求输密码？点上面这个按钮重登记一次即可，之后长期免验证。
       </div>
     </div>
 
@@ -6358,13 +6372,14 @@ function gateNetFail(rejected){
     /* 服务端明确说这个 token 无效（设备记录已被移除 / 从未写入成功）。
        这是「凭证问题」而不是「网络问题」，
        自动重试多少次都没用，必须换一个新的 token。 */
-    gateNetMsg('本机免验证凭证已失效（可能曾被移除过）。重新登记一次即可，之后长期免验证。');
+    gateNetMsg('本机免验证凭证已失效（可能曾被移除过）。请在下方「管理员」页签点绿色按钮「重新登记本机（免验证）」，之后长期免验证。');
+    gateTab('admin');
     gateEnsureCard();
     var rb = $('#gateReBtn');
     if(!rb){
       rb = document.createElement('button');
       rb.id = 'gateReBtn';
-      rb.className = 'gate-btn';
+      rb.className = 'gate-btn gate-btn-green';
       rb.style.cssText = 'margin-top:10px;background:linear-gradient(135deg,#1a7f4b,#14603a);box-shadow:0 6px 18px rgba(26,127,75,.3)';
       rb.textContent = '重新登记本机（免验证）';
       rb.onclick = gateReRegister;
@@ -6409,17 +6424,29 @@ function gateEnsureCard(){
   var card = $('.gate-card');
   return card || document.body;
 }
-/* 重新登记本机：清掉旧凭证 → 弹密码框 → 换发新 token → 直接进工作台 */
+/* 重新登记本机：清掉旧凭证 → 取密码 → 换发新 token → 直接进工作台 */
 function gateReRegister(){
-  var pw = window.prompt('请输入管理员密码（重新登记本机免验证）');
-  if(!pw) return;
-  var pwd = String(pw).trim();
-  if(!pwd) return;
+  /* 优先用管理员页签里已经填好的密码；没有才弹框。
+     （原来一律用 window.prompt，手机上体验很差，也容易输错） */
+  var box = $('#gateAdminPwd');
+  var pwd = box ? String(box.value || '').trim() : '';
+  if(!pwd){
+    try{
+      pwd = window.prompt('请输入管理员密码（重新登记本机免验证）') || '';
+      pwd = String(pwd).trim();
+    }catch(e){ pwd = ''; }
+  }
+  if(!pwd){ gateAdminErr('请先填写管理员密码，再点「重新登记本机」。', true); return; }
+
   gateNetMsg('正在重新登记…');
+  gateAdminErr('', false);
   /* 先作废旧 token，避免服务端残留记录干扰 */
   cbTokenClear();
   try{ localStorage.removeItem('wb_nsch_role'); }catch(e){}
+  var btn = $('#gateReBtnStatic') || $('#gateReBtn');
+  if(btn){ btn.disabled = true; btn.textContent = '正在登记…'; }
   cbLoginDevice(pwd, guessDeviceName(), function(ok, nm, mode){
+    if(btn){ btn.disabled = false; btn.textContent = '重新登记本机（免验证）'; }
     if(!ok){
       gateNetMsg('登记失败，请检查管理员密码是否正确，或网络是否正常。');
       return;
