@@ -286,6 +286,42 @@ async function handleDeviceLogin(event) {
   const token = randHex(48);
   const t = now();
 
+  /* 登记前先清理陈旧设备：
+     同名设备超过 90 天没活动就删掉，同时总量封顶 200。
+     避免设备表无限膨胀（每次失败重试都会新增一条），
+     也避免再次出现「设备太多导致查询漏记录」。 */
+  try {
+    const res = await getDb().collection(DEV_COLL).limit(1000).get();
+    const all = (res && res.data) || [];
+    const DEAD = t - 90 * 24 * 3600 * 1000;
+    for (const d of all) {
+      const seen = d.lastSeenAt || d.createdAt || 0;
+      if (seen && seen < DEAD) {
+        try { await getDb().collection(DEV_COLL).doc(d._id).remove(); } catch (e) {}
+      }
+    }
+    const left = all.filter(d => (d.lastSeenAt || d.createdAt || 0) >= DEAD);
+    if (left.length > 200) {
+      left.sort((a, b) => (b.lastSeenAt || 0) - (a.lastSeenAt || 0));
+      for (const d of left.slice(200)) {
+        try { await getDb().collection(DEV_COLL).doc(d._id).remove(); } catch (e) {}
+      }
+    }
+  } catch (e) {}
+
+  /* 同名设备只保留最新一条。
+     否则每次重新登记都会堆一条记录，设备表越来越臃肿，
+     用户在设备列表里也看到一堆同名条目，无法分辨。 */
+  try {
+    const old = await getDb().collection(DEV_COLL).where({ name: name }).limit(50).get();
+    const rows = (old && old.data) || [];
+    for (const d of rows) {
+      if (d.tokenHash !== hash(token)) {
+        try { await getDb().collection(DEV_COLL).doc(d._id).remove(); } catch (e) {}
+      }
+    }
+  } catch (e) {}
+
   await getDb().collection(DEV_COLL).add({
     name: name,
     tokenHash: hash(token),
@@ -301,10 +337,24 @@ async function handleDeviceLogin(event) {
 async function checkDevice(event) {
   const tok = header(event, 'X-Device-Token');
   if (!tok) return null;
-  const res = await getDb().collection(DEV_COLL).limit(50).get();
-  const list = (res && res.data) || [];
   const h = hash(tok);
-  const hit = list.find(d => d.tokenHash === h);
+  /* 必须按 tokenHash 精确查询，绝不能 .limit(50) 全表扫。
+     设备数量超过 50 之后，靠前的记录会把靠后的挤掉，
+     导致「明明登记过的设备突然变成未授权」。 */
+  let hit = null;
+  try {
+    const q = await getDb().collection(DEV_COLL).where({ tokenHash: h }).limit(1).get();
+    const rows = (q && q.data) || [];
+    if (rows.length) hit = rows[0];
+  } catch (e) {}
+  /* 精确查询失败时再退回全表扫，保证兼容性 */
+  if (!hit) {
+    try {
+      const res = await getDb().collection(DEV_COLL).limit(1000).get();
+      const list = (res && res.data) || [];
+      hit = list.find(d => d.tokenHash === h) || null;
+    } catch (e) {}
+  }
   if (!hit) return null;
   try {
     await getDb().collection(DEV_COLL).doc(hit._id).update({ lastSeenAt: now() });
@@ -324,7 +374,7 @@ async function auth(event) {
 async function handleDeviceList(event) {
   const a = await auth(event);
   if (!a) return fail('未授权：请输入管理员密码', 401);
-  const res = await getDb().collection(DEV_COLL).limit(50).get();
+  const res = await getDb().collection(DEV_COLL).limit(200).get();
   const list = (res && res.data) || [];
   // 标记哪一台是「本机」：比对请求带的 token
   const myHash = (a.device && a.device.tokenHash) || '';
