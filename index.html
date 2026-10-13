@@ -5784,7 +5784,21 @@ function api(path, body, adminPwd){
       opt.body = JSON.stringify(body);
     }
     if(adminPwd) opt.headers['X-Admin-Password'] = adminPwd;
-    return fetch(list[idx] + path, opt).then(function(r){
+    /* 也带上本机设备 token：
+       免验证设备登录时根本没有密码（adminPwd 为空），
+       若只发密码头，后端会拒绝——用户明明已进站，
+       发码却报「管理员密码错误」。
+       同时走请求头和 query 两路，某些手机浏览器会丢自定义头。 */
+    var _tk = (typeof cbTokenGet === 'function') ? cbTokenGet() : '';
+    var _u = list[idx] + path;
+    if(_tk){
+      opt.headers['X-Device-Token'] = _tk;
+      _u += (_u.indexOf('?') >= 0 ? '&' : '?') + 't=' + encodeURIComponent(_tk);
+      var _fetchUrl = _u;
+    }else{
+      var _fetchUrl = list[idx] + path;
+    }
+    return fetch(_fetchUrl, opt).then(function(r){
       return r.json().catch(function(){ return { ok:false, error:'服务返回异常（HTTP ' + r.status + '）' }; });
     }).then(function(d){
       if(d && d.offline) return tryOne(idx + 1);
