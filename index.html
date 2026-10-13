@@ -855,8 +855,8 @@ body.locked > .mask{display:none !important}
       <div class="ap-field">
         <label for="adminHours">有效期</label>
         <select id="adminHours">
-          <option value="24">24 小时</option>
-          <option value="168" selected>7 天</option>
+          <option value="24" selected>24 小时</option>
+          <option value="168">7 天</option>
           <option value="720">30 天</option>
         </select>
         <button class="ap-btn ap-primary" id="adminGenBtn" onclick="adminGen()">生成访问码</button>
@@ -5748,7 +5748,7 @@ function fileApi(path, body, adminPwd){
         if(!used[c]){ nc = c; break; }
       }
       if(!nc) return { ok:false, error:'无法生成新码' };
-      var hours = (body && body.hours) || 168;
+      var hours = (body && body.hours) || 24;
       return { ok:true, code:nc, expires:now + hours * 3600 * 1000,
                note:(body && body.note) || '未备注', fileMode:true };
     }
@@ -5971,7 +5971,7 @@ function adminRefresh(){
 /* 生成新码 */
 function adminGen(){
   var note = $('#adminNote') ? $('#adminNote').value.trim() : '';
-  var hours = $('#adminHours') ? Number($('#adminHours').value) : 168;
+  var hours = $('#adminHours') ? Number($('#adminHours').value) : 24;
   $('#adminGenBtn').disabled = true;
   api('/api/code', { note: note, hours: hours }, adminState.pwd).then(function(d){
     $('#adminGenBtn').disabled = false;
