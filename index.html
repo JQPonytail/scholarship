@@ -5459,7 +5459,15 @@ function cbApi(path, body){
     opt.body = JSON.stringify(body);
   }
   var tk = cbTokenGet();
-  if(tk) opt.headers['X-Device-Token'] = tk;
+  var url = CB_BASE + path;
+  if(tk){
+    /* 同时走请求头和 query 两路。
+       某些手机浏览器 / 内置 App 浏览器 / 中间代理会静默丢掉自定义请求头，
+       导致「明明登记过却一直 401 设备未授权」。
+       query 是兜底通道，只要一路通就能鉴权成功。 */
+    opt.headers['X-Device-Token'] = tk;
+    url += (url.indexOf('?') >= 0 ? '&' : '?') + 't=' + encodeURIComponent(tk);
+  }
 
   /* 必须加超时。
      手机端（尤其是移动网络切换、弱网、后台唤醒后）fetch 可能长时间挂起不返回，
@@ -5474,7 +5482,7 @@ function cbApi(path, body){
   function parse(r){
     return r.json().catch(function(){ return { ok:false, error:'返回异常 HTTP ' + r.status }; });
   }
-  return fetch(CB_BASE + path, opt).then(function(r){
+  return fetch(url, opt).then(function(r){
     clearTimeout(timer);
     if(timedOut) throw new Error('请求超时');
     return parse(r);
