@@ -131,10 +131,21 @@ function header(event, name) {
   return '';
 }
 
+/* 取参数：先请求头，再退回 query string。
+   某些手机浏览器 / 中间代理会吞掉自定义请求头 X-Device-Token，
+   导致「明明登记过却一直 401」。加上 query 兜底可彻底规避。 */
+function tokenOf(event) {
+  const t = String(header(event, 'X-Device-Token') || '').trim();
+  if (t) return t;
+  const qp = event.queryStringParameters || {};
+  const q = String(qp.t || qp.token || '').trim();
+  return q;
+}
+
 function genCode(taken) {
-  for (let t = 0; t < 60; t++) {
+  for (let i = 0; i < 60; i++) {
     const c = String(Math.floor(100000 + Math.random() * 900000));
-    if (!taken[c]) return c;
+    if (!taken || !taken[c]) return c;
   }
   return '';
 }
@@ -335,7 +346,7 @@ async function handleDeviceLogin(event) {
 
 // 校验设备 token
 async function checkDevice(event) {
-  const tok = header(event, 'X-Device-Token');
+  const tok = tokenOf(event);
   if (!tok) return null;
   const h = hash(tok);
   /* 必须按 tokenHash 精确查询，绝不能 .limit(50) 全表扫。
