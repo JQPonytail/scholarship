@@ -193,10 +193,16 @@ async function handleVerify(event) {
 function adminOk(event) {
   return header(event, 'X-Admin-Password') === ADMIN_PASSWORD;
 }
+/* 发码 / 码列表 / 作码 三个接口改用 auth()：
+   认「密码」或「本机可信设备 token」。
+   原因：免验证设备登录时前端没有密码，
+   若只认密码，用户明明已进站却会报「管理员密码错误」。
+   注意：handleDeviceLogin（设备注册）仍强制认密码，
+   否则任一已登录设备可无限续发新 token、泄漏后无法踢除。 */
 
 // ---------- 接口 2：管理员发码 ----------
 async function handleCreate(event) {
-  if (!adminOk(event)) return fail('管理员密码错误');
+  if (!(await auth(event))) return fail('管理员密码错误');
   const body = parseBody(event);
   const note = String(body.note || '').trim().slice(0, 30) || '未备注';
   const hours = Math.max(1, Math.min(8760, Number(body.hours) || 168));
@@ -237,7 +243,7 @@ async function handleCreate(event) {
 
 // ---------- 接口 3：码列表 ----------
 async function handleList(event) {
-  if (!adminOk(event)) return fail('管理员密码错误');
+  if (!(await auth(event))) return fail('管理员密码错误');
   const list = await readAll();
   const t = now();
   return ok({
@@ -256,7 +262,7 @@ async function handleList(event) {
 
 // ---------- 接口 4：作废 ----------
 async function handleRevoke(event) {
-  if (!adminOk(event)) return fail('管理员密码错误');
+  if (!(await auth(event))) return fail('管理员密码错误');
   const body = parseBody(event);
   const code = String(body.code || '').trim();
   if (!code) return fail('缺少 code');
