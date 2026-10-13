@@ -6469,6 +6469,106 @@ function gateNetFail(){
   var inp = $('#gateInput');
   if(inp){ setTimeout(function(){ try{ inp.focus(); }catch(e){} }, 260); }
 }
+
+/* ============================================================
+   诊断页：把「网络未连通」的真相直接显示出来
+   —— 之前一直靠猜，是因为 fetch 失败时信息全被 catch 吃掉了。
+      这个函数把耗时、失败类型、HTTP 状态、响应头全部摊开。
+   ============================================================ */
+function runDiag(){
+  var out = document.getElementById('diagOut');
+  if(!out) return;
+  out.innerHTML = '';
+  function line(k, v, cls){
+    var d = document.createElement('div');
+    d.style.cssText = 'padding:7px 10px;border-bottom:1px solid #eef2f8;font-size:13px;word-break:break-all;';
+    d.innerHTML = '<b style="color:#5d6d87">' + k + '</b><br><span style="color:' +
+      (cls || '#16233c') + '">' + v + '</span>';
+    out.appendChild(d);
+  }
+  line('① 页面地址', location.href);
+  line('② 浏览器', navigator.userAgent);
+  try{
+    localStorage.setItem('__dg','1');
+    line('③ localStorage', localStorage.getItem('__dg')==='1' ? '可读写（正常）' : '写入失败！凭证无法保存', localStorage.getItem('__dg')==='1' ? '#1a7f4b' : '#d0342c');
+    localStorage.removeItem('__dg');
+  }catch(e){ line('③ localStorage', '不可用：' + e.message, '#d0342c'); }
+  var tk = '';
+  try{ tk = (localStorage.getItem('wb_nsch_devtoken')||'').slice(0,10); }catch(e){}
+  line('④ 本机凭证 token', tk ? tk + '…（存在）' : '无（从未成功保存）', tk ? '#1a7f4b' : '#d0342c');
+
+  line('⑤ 测试后端连通性…', '请稍候…', '#7183a0');
+
+  var t0 = Date.now();
+  var ctrl = (typeof AbortController !== 'undefined') ? new AbortController() : null;
+  var timer = setTimeout(function(){ if(ctrl) ctrl.abort(); }, 10000);
+
+  fetch(CB_BASE + '/api/device/check', {
+    method:'GET',
+    headers: tk ? {} : {},
+    signal: ctrl ? ctrl.signal : undefined
+  }).then(function(r){
+    clearTimeout(timer);
+    var cost = Date.now() - t0;
+    line('⑥ 请求耗时', cost + ' 毫秒', cost < 3000 ? '#1a7f4b' : '#d0342c');
+    line('⑦ HTTP 状态', r.status + ' ' + r.statusText, r.ok ? '#1a7f4b' : '#d0342c');
+    /* 关键：CORS 被拦时，浏览器根本不会把响应交给 JS，
+       而是先抛 TypeError。所以能走到这里就说明 CORS 至少是通的。 */
+    try{
+      var h = '';
+      if(r.headers && r.headers.get) h = (r.headers.get('access-control-allow-origin')||'(无)');
+      line('⑧ CORS 允许源', h, h==='*' ? '#1a7f4b' : '#d0342c');
+    }catch(e){}
+    return r.text().then(function(t){
+      line('⑨ 响应内容', t.length > 300 ? t.slice(0,300) + '…' : t);
+      line('⑩ 结论', '请求成功到达服务器。问题不在网络。');
+    });
+  }).catch(function(e){
+    clearTimeout(timer);
+    var cost = Date.now() - t0;
+    var name = e && e.name ? e.name : 'Error';
+    var msg  = e && e.message ? e.message : String(e);
+    line('⑥ 请求耗时', cost + ' 毫秒', cost >= 10000 ? '#d0342c' : '#7183a0');
+    line('⑥ 失败类型', name + '：' + msg, '#d0342c');
+    var verdict = '';
+    if(name === 'AbortError'){
+      verdict = '请求超时（超过 10 秒无响应）。可能是移动网络慢，或接口被墙/被运营商拦截。';
+    }else if(/Failed to fetch|NetworkError|Load failed|ERR_/i.test(msg)){
+      verdict = '跨域被浏览器拦截或网络层阻断。' +
+                '最常见原因：这个第三方浏览器的跨域策略比系统浏览器更严格。' +
+                '→ 解决办法：换用手机系统自带浏览器（安卓 Chrome / Safari）打开同一网址。';
+    }else{
+      verdict = '未知错误，请把上面第 ⑥ 行完整截图给开发者。';
+    }
+    var v = document.createElement('div');
+    v.style.cssText = 'padding:12px;background:#fdeaec;color:#a30d25;font-size:13.5px;line-height:1.7;font-weight:700;';
+    v.textContent = '【结论】' + verdict;
+    out.appendChild(v);
+  });
+}
+
+/* ---------- 诊断模式：网址后加 #diag 即可打开 ---------- */
+(function(){
+  if(location.hash !== '#diag' && location.search.indexOf('diag=1') < 0) return;
+  document.addEventListener('DOMContentLoaded', function(){
+    gateOpen();
+    var box = document.createElement('div');
+    box.id = 'diagBox';
+    box.style.cssText = 'max-width:640px;margin:20px auto;padding:16px;background:#fff;border-radius:14px;';
+    box.innerHTML =
+      '<h2 style="margin:0 0 6px;font-size:19px;color:#16233c">连接诊断</h2>' +
+      '<p style="margin:0 0 14px;font-size:13px;color:#7183a0;line-height:1.6">' +
+      '这个页面会直接告诉你「网络未连通」的真实原因。</p>' +
+      '<button id="diagRun" style="width:100%;height:48px;border:0;border-radius:11px;cursor:pointer;' +
+      'background:linear-gradient(135deg,#c8102e,#a30d25);color:#fff;font-size:15px;font-weight:800;font-family:inherit;margin-bottom:14px">' +
+      '开始检测</button>' +
+      '<div id="diagOut" style="border:1px solid #e4e9f2;border-radius:10px;overflow:hidden"></div>';
+    document.body.insertBefore(box, document.body.firstChild);
+    document.getElementById('diagRun').onclick = runDiag;
+    runDiag();
+  });
+})();
+
 if(document.readyState === 'loading'){
   document.addEventListener('DOMContentLoaded', boot);
 }else{
