@@ -6345,9 +6345,8 @@ function bindGate(){
     if(m && m.classList.contains('on') && (e.key === 'Escape' || e.keyCode === 27)) apClose();
   });
 }
-function boot(){
-  bindGate();
-  var gateNetRetry = 0;
+/* ---- 门禁页辅助函数（必须在顶层，供 HTML onclick 调用） ---- */
+var gateNetRetry = 0;
 var gateNetTimer = null;
 /* 在门禁页显示一条状态提示（不遮挡主操作） */
 function gateNetMsg(txt){
@@ -6459,6 +6458,9 @@ function gateReRegister(){
   }, true);
 }
 
+
+function boot(){
+  bindGate();
 /* 启动时先问一次：本机是不是已登记的可信管理员设备。
      是 → 直接进入工作台，完全跳过访问码页；
      否 → 显示访问码页（访客或未登记设备）。 */
