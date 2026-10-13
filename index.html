@@ -5731,9 +5731,8 @@ function fileLoadCodes(){
 }
 /* 文件通道模拟后端接口的返回结构 */
 function fileApi(path, body, adminPwd){
-  if(adminPwd !== 'JQP@2026'){
-    return Promise.resolve({ ok:false, error:'管理员密码错误' });
-  }
+  /* 前端不做密码比对：页面代码公开可读，写死密码等于直接公开。
+     文件通道本身只能读不能写，真正的鉴权在后端云函数。 */
   return fileLoadCodes().then(function(codes){
     var now = Date.now();
     if(path === '/api/list'){

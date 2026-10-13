@@ -13,7 +13,10 @@
 // ============================================================
 
 // ---------- 配置 ----------
-const ADMIN_PASSWORD = 'JQP@2026';
+/* 管理员密码从环境变量读取，不写进代码。
+   CloudBase 控制台 → 云函数 → 本函数 → 函数配置 → 环境变量
+   新增：ADMIN_PASSWORD = 你的密码 */
+const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || '';
 const DB = 'scholarship';          // 数据表名
 const COLL = 'codes';              // 访问码集合
 const DATA_COLL = 'appdata';       // 业务数据集合（多端同步）
