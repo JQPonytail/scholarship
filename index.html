@@ -6386,37 +6386,7 @@ function gateNetFail(rejected){
     return;
   }
 
-  gateNetMsg('网络未连通，暂时无法验证本设备免验证。凭证已保留，联网后点下方「重试验证」即可直接进入。');
-  gateEnsureCard();
-  var btn = $('#gateRetryBtn');
-  if(!btn){
-    btn = document.createElement('button');
-    btn.id = 'gateRetryBtn';
-    btn.className = 'gate-btn';
-    btn.style.marginTop = '10px';
-    btn.textContent = '重试验证';
-    btn.onclick = function(){
-      btn.disabled = true;
-      btn.textContent = '正在验证…';
-      gateNetMsg('');
-      cbCheckDevice(function(ok, nm, rej){
-        if(ok){
-          SESSION.role = 'admin';
-          SESSION.code = 'device';
-          if(typeof cbBoot === 'function') cbBoot();
-          enterWorkbench();
-          return;
-        }
-        btn.disabled = false;
-        btn.textContent = '重试验证';
-        gateNetFail(rej);
-      });
-    };
-    gateEnsureCard().appendChild(btn);
-  }else{
-    btn.disabled = false;
-    btn.textContent = '重试验证';
-  }
+  gateNetMsg('网络未连通，暂时无法验证本设备免验证。凭证已保留，联网后刷新页面即可直接进入。');
 }
 function gateEnsureCard(){
   var card = $('.gate-card');
